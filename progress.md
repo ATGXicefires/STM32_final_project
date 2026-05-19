@@ -43,6 +43,29 @@ Date: 2026-05-19
   - STM32 replies with `RX: <char>`.
   - STM32 USB CDC also reports the received characters and button events.
 
+### Stage 4: ESP32 UART PING/PONG
+
+- STM32 USART1 remains `PA9` TX and `PA10` RX at `115200 8N1`.
+- ESP32 test firmware uses `Serial2` at `115200 8N1`.
+- Verified behavior:
+  - STM32 sends `PING`.
+  - ESP32 replies `PONG`.
+  - STM32 reports `ESP32 PONG OK` through USB CDC.
+
+### Stage 5: MAX98357A I2S Beep
+
+- STM32 I2S2 is configured as master transmit, `16 kHz`, `16-bit`, Philips I2S.
+- MAX98357A wiring target:
+  - `PB13` -> `BCLK`
+  - `PB12` -> `LRC / WS`
+  - `PB15` -> `DIN`
+  - `GND` <-> common ground
+  - `VIN` -> 3.3V or 5V according to the MAX98357A module label
+- MCLK is disabled because MAX98357A does not require it.
+- Firmware sends a short blocking I2S beep every 3 seconds and reports `I2S beep sent` through USB CDC.
+- Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
+- Hardware audio output still needs manual flashing and speaker test.
+
 ## Current Firmware Behavior
 
 - Preserves GPIO/Button test behavior.
@@ -50,12 +73,14 @@ Date: 2026-05-19
 - Accepts single-byte USART1 input and echoes `RX: <char>`.
 - Sends `PING` over USART1 once per second for the ESP32 UART bridge test.
 - Reports `ESP32 PONG OK` when a full `PONG` line is received.
+- Sends a short I2S2 beep buffer every 3 seconds for MAX98357A testing.
+- Reports `I2S beep sent` over USB CDC after each successful beep transmit.
 
 ## Next Checkpoint
 
-Stage 4 will validate STM32 USART1 to ESP32 UART communication:
+Stage 5 hardware validation will check MAX98357A audio output:
 
-- STM32 sends `PING`.
-- ESP32 replies `PONG`.
-- STM32 reports `ESP32 PONG OK` through USB CDC.
-
+- Manually flash the new `.elf` by following `walkthrough2.md`.
+- Open the STM32 USB CDC COM port.
+- Confirm `I2S beep sent` appears.
+- Confirm the speaker connected to MAX98357A outputs a short beep every few seconds.

@@ -43,6 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
+I2S_HandleTypeDef hi2s2;
 
 /* USER CODE BEGIN PV */
 
@@ -51,12 +52,15 @@ UART_HandleTypeDef huart1;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_I2S2_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 static void Test_SendStatus(const char *message);
 static void Test_SendUsbStatus(const char *message);
 static void Test_SendPingIfDue(uint32_t *last_ping_tick);
 static void Test_HandleUartRx(void);
+static void Test_PlayI2SBeepIfDue(uint32_t *last_beep_tick);
+static void Test_PlayI2SBeep(void);
 
 /* USER CODE END PFP */
 
@@ -107,6 +111,36 @@ static void Test_HandleUartRx(void) {
   }
 }
 
+static void Test_PlayI2SBeepIfDue(uint32_t *last_beep_tick) {
+  if ((HAL_GetTick() - *last_beep_tick) >= 3000U) {
+    *last_beep_tick = HAL_GetTick();
+    Test_PlayI2SBeep();
+  }
+}
+
+static void Test_PlayI2SBeep(void) {
+  static uint16_t beep_buffer[128];
+  static uint8_t buffer_ready = 0;
+
+  if (buffer_ready == 0U) {
+    for (uint16_t frame = 0; frame < 64U; frame++) {
+      int16_t sample = (((frame / 8U) % 2U) == 0U) ? 9000 : -9000;
+      beep_buffer[frame * 2U] = (uint16_t)sample;
+      beep_buffer[(frame * 2U) + 1U] = (uint16_t)sample;
+    }
+    buffer_ready = 1U;
+  }
+
+  for (uint8_t repeat = 0; repeat < 50U; repeat++) {
+    if (HAL_I2S_Transmit(&hi2s2, beep_buffer, 128, 100) != HAL_OK) {
+      Test_SendUsbStatus("I2S beep error\r\n");
+      return;
+    }
+  }
+
+  Test_SendUsbStatus("I2S beep sent\r\n");
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -138,11 +172,13 @@ int main(void) {
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_I2S2_Init();
   MX_USART1_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   uint32_t last_blink_tick = HAL_GetTick();
   uint32_t last_ping_tick = HAL_GetTick();
+  uint32_t last_beep_tick = HAL_GetTick();
   uint8_t blink_state = 0;
   uint8_t last_button_state = 0xFF;
 
@@ -151,6 +187,7 @@ int main(void) {
   Test_SendStatus("GPIO/Button test ready\r\n");
   Test_SendStatus("USART1 USB-TTL echo test ready\r\n");
   Test_SendStatus("ESP32 UART PING/PONG test ready\r\n");
+  Test_SendUsbStatus("I2S2 MAX98357A beep test ready\r\n");
   Test_SendStatus("Type characters in Tera Term\r\n");
   /* USER CODE END 2 */
 
@@ -202,6 +239,7 @@ int main(void) {
     // 透過 USB 傳送資料
     Test_SendPingIfDue(&last_ping_tick);
     Test_HandleUartRx();
+    Test_PlayI2SBeepIfDue(&last_beep_tick);
     HAL_Delay(20);
 
     /* USER CODE END WHILE */
@@ -218,6 +256,7 @@ int main(void) {
 void SystemClock_Config(void) {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
    */
@@ -251,6 +290,44 @@ void SystemClock_Config(void) {
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK) {
     Error_Handler();
   }
+
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S;
+  PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
+  PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK) {
+    Error_Handler();
+  }
+}
+
+/**
+ * @brief I2S2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2S2_Init(void) {
+
+  /* USER CODE BEGIN I2S2_Init 0 */
+
+  /* USER CODE END I2S2_Init 0 */
+
+  /* USER CODE BEGIN I2S2_Init 1 */
+
+  /* USER CODE END I2S2_Init 1 */
+  hi2s2.Instance = SPI2;
+  hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
+  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_16K;
+  hi2s2.Init.CPOL = I2S_CPOL_LOW;
+  hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s2) != HAL_OK) {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2S2_Init 2 */
+
+  /* USER CODE END I2S2_Init 2 */
 }
 
 /**
