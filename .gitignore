@@ -1,0 +1,10 @@
+.metadata/
+.vscode/
+*.log
+*.tmp
+*.bak
+*.swp
+*~
+Thumbs.db
+Desktop.ini
+

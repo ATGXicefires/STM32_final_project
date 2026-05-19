@@ -1,0 +1,3 @@
+使用STM32读取INMP441麦克风数据并实时播放 https://www.object-c.cn/4881
+
+可能把流程中的Whisper換成Sherpa-ONNX更好?

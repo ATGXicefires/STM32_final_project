@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project NIM-Assistant | STM32 AI 語音助理</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #76B900;
+            --dark: #1a1a1a;
+            --light: #f8f9fa;
+            --accent: #008543;
+        }
+
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: var(--light);
+            color: #1a1a1a; /* 顏色加深，提升閱讀對比度 */
+            line-height: 1.8;
+            margin: 0;
+            font-size: 1.05rem; /* 字體微調放大 */
+        }
+
+        .hero {
+            background-color: var(--dark);
+            color: white;
+            text-align: center;
+            padding: 4rem 1rem;
+            border-bottom: 6px solid var(--primary);
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2.5rem;
+            margin-bottom: 2.5rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            color: var(--dark);
+            border-left: 5px solid var(--primary);
+            padding-left: 15px;
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+
+        h3 {
+            color: var(--accent);
+            margin-top: 2rem;
+        }
+
+        .mermaid {
+            background: #fff;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #fcfcfc;
+            color: var(--dark);
+        }
+
+        .step-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .step-item {
+            margin-bottom: 1.5rem;
+            padding-left: 40px;
+            position: relative;
+        }
+
+        .step-item::before {
+            content: attr(data-step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 28px;
+            height: 28px;
+            background-color: var(--primary);
+            color: white;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 28px;
+            font-weight: bold;
+        }
+
+        .badge {
+            background: #e1f5fe;
+            color: #01579b;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: bold;
+        }
+
+        .price-total {
+            background: var(--dark);
+            color: var(--primary);
+            padding: 1rem 2rem;
+            display: inline-block;
+            border-radius: 8px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+
+        /* 職責說明區塊樣式 */
+        .responsibility-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
+        .device-box {
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            background: #fafafa;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+            transition: transform 0.2s ease;
+        }
+
+        .device-box:hover {
+            transform: translateY(-3px);
+        }
+
+        .device-box h4 {
+            margin-top: 0;
+            color: var(--accent);
+            font-size: 1.15rem;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+        }
+
+        .device-box ul {
+            padding-left: 20px;
+            font-size: 0.95rem;
+            color: #2c2c2c;
+        }
+
+        .device-box li {
+            margin-bottom: 6px;
+        }
+
+        .tag {
+            background: #e9ecef;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: #495057;
+            margin-bottom: 12px;
+            display: inline-block;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#f1f8e9',
+                primaryTextColor: '#1a1a1a',
+                primaryBorderColor: '#76B900',
+                lineColor: '#333',
+                secondaryColor: '#f4f4f4',
+                tertiaryColor: '#fff',
+                fontSize: '15px'
+            }
+        });
+    </script>
+</head>
+<body>
+
+<div class="hero">
+    <h1>Project NIM-Assistant</h1>
+    <p>基於 STM32 與 NVIDIA NIM 之邊緣運算語音互動助理</p>
+</div>
+
+<div class="container">
+    
+    <div class="card">
+        <h2>專案簡介</h2>
+        <p>本專案實踐了<strong>「端點感知 (Edge) + 邊緣伺服 (PC) + 雲端智腦 (NIM)」</strong>的協同運算架構。STM32 負責即時的 I2S 數位音訊擷取與硬體控制，而繁重的 AI 模型推論與語音合成則交由 PC 中繼站及 NVIDIA 雲端服務完成。這不僅大幅降低了嵌入式設備的負擔，更實現了極具人性化的智慧對話體驗。</p>
+    </div>
+
+    <div class="card">
+        <h2>系統全鏈路資料流圖與硬體職責</h2>
+        <div class="mermaid">
+            graph TD
+            %% 定義硬體終端
+            subgraph Edge_Terminal [STM32 硬體感知層]
+                MIC[INMP441 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
+                DMA_RX -->|雙緩衝| MCU_CORE[STM32 邏輯中心]
+                MCU_CORE -->|SPI| OLED[OLED 顯示]
+                MCU_CORE -->|GPIO| BTN[實體按鍵]
+                MCU_CORE -->|I2S| DMA_TX[DMA 發送緩衝]
+                DMA_TX -->|類比放大| AMP[MAX98357A]
+                AMP --> SPK[3W 喇叭]
+            end
+
+            %% 定義通訊中繼
+            subgraph Communication_Bridge [通訊轉換層]
+                MCU_CORE <-->|High-Speed UART| ESP[ESP32 Bridge]
+                ESP <-->|Wi-Fi TCP Socket| PC_SRV[PC Local Server]
+            end
+
+            %% 定義後端處理
+            subgraph Edge_Compute_Center [PC 邊緣運算中樞]
+                PC_SRV -->|Audio Data| ASR[Whisper ASR 辨識]
+                ASR -->|Prompt| NIM_REQ[API Request 封裝]
+                NIM_REQ <-->|HTTPS| NIM_API[NVIDIA NIM Cloud]
+                NIM_API -->|Text| TTS[Edge-TTS 合成]
+                TTS -->|PCM Stream| PC_SRV
+            end
+
+            %% 樣式設定
+            style Edge_Terminal fill:#f9fff0,stroke:#76B900,stroke-width:2px
+            style Communication_Bridge fill:#fff9f0,stroke:#ff9800,stroke-width:2px
+            style Edge_Compute_Center fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+            style NIM_API fill:#000,color:#fff,stroke:#76B900,stroke-width:3px
+        </div>
+
+        <!-- 硬體職責說明 -->
+        <div class="responsibility-grid">
+            <div class="device-box">
+                <span class="tag">Main Controller</span>
+                <h4>STM32F407VET6</h4>
+                <ul>
+                    <li><strong>時序管理：</strong>精確產生 I2S 採樣所需之 Master Clock。</li>
+                    <li><strong>DMA 管理：</strong>實作雙緩衝 (Ping-Pong Buffer) 機制，確保音訊不中斷。</li>
+                    <li><strong>資料流控制：</strong>負責 UART 封裝與解封裝，處理與 ESP32 之間的溝通。</li>
+                    <li><strong>UI 更新：</strong>過 SPI 總線高速更新 OLED 對話狀態。</li>
+                </ul>
+            </div>
+
+            <div class="device-box">
+                <span class="tag">Comms Gateway</span>
+                <h4>ESP32-WROOM-32E</h4>
+                <ul>
+                    <li><strong>網路維護：</strong>管理 Wi-Fi 連線與容錯機制。</li>
+                    <li><strong>透明傳輸：</strong>作為高速 UART 轉 TCP Socket 的橋接器。</li>
+                    <li><strong>加密處理：</strong>（預留）進行基礎數據加密保護通訊。</li>
+                </ul>
+            </div>
+
+            <div class="device-box">
+                <span class="tag">Edge Server</span>
+                <h4>PC (Local Server)</h4>
+                <ul>
+                    <li><strong>ASR 辨識：</strong>利用電腦算力進行即時語音轉文字。</li>
+                    <li><strong>雲端串接：</strong>整合 NVIDIA NIM 跑大型語言模型。</li>
+                    <li><strong>TTS 合成：</strong>生成高品質人聲並串流回邊緣裝置。</li>
+                </ul>
+            </div>
+
+            <div class="device-box">
+                <span class="tag">Audio I/O</span>
+                <h4>Peripherals (Mic / Amp)</h4>
+                <ul>
+                    <li><strong>INMP441：</strong>提供低底噪、全向性的數位聲音輸入。</li>
+                    <li><strong>MAX98357A：</strong>高效率 Class D 功率放大，直接驅動喇叭。</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>製作流程 (Production Workflow)</h2>
+        <div class="step-list">
+            <div class="step-item" data-step="1">
+                <strong>硬體電路組建與焊接</strong>
+                <p>將 INMP441 麥克風與 MAX98357A 擴大機模組銲接排針，並根據 I2S 腳位定義連接至 STM32F407。確保電源供應穩定，避免音訊雜訊。</p>
+            </div>
+            <div class="step-item" data-step="2">
+                <strong>STM32 基礎音訊驅動開發</strong>
+                <p>在 STM32CubeIDE 配置 I2S 全雙工模式，並實作 <strong>DMA 雙緩衝 (Ping-Pong Buffer)</strong> 邏輯。首要目標是完成「音訊回放測試」，確保收音與發聲正常。</p>
+            </div>
+            <div class="step-item" data-step="3">
+                <strong>ESP32 通訊橋接實作</strong>
+                <p>撰寫 ESP32 程式，使其建立 Wi-Fi 連線並作為 TCP Client。開發高效的 UART 緩衝機制，將 STM32 的原始音訊流透傳至電腦端。</p>
+            </div>
+            <div class="step-item" data-step="4">
+                <strong>PC 端中繼伺服器開發 (Python)</strong>
+                <p>使用 Python 建立 TCP Server 接收音訊。整合 <strong>NVIDIA NIM (GLM-4.7)</strong> 處理文字對話，並搭配 ASR/TTS 套件完成語音與文字的轉換。</p>
+            </div>
+            <div class="step-item" data-step="5">
+                <strong>系統整合與 UI 調教</strong>
+                <p>進行全鏈路延遲測試，優化 Buffer Size。最後在 STM32 加入 OLED 顯示狀態與實體按鍵控制，完成成品製作。</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>開發進度排程 (Project Roadmap)</h2>
+        <p>距離 6 月底完工約有 9 週時間，目前處於材料採購階段。採用「先軟後硬、分段驗收」策略以降低風險。</p>
+        <div class="mermaid">
+            gantt
+                title 專題開發里程碑 (4月下旬 ~ 6月底)
+                dateFormat  MM-DD
+                axisFormat  %m/%d
+                
+                section 階段一：備料與軟體
+                材料採購與等待到貨     :active, a1, 04-21, 7d
+                PC Python 伺服器與 NIM API 測試 :a2, 04-21, 10d
+                
+                section 階段二：底層硬體 (大魔王)
+                STM32 環境建置與 LED/UART 測試 :b1, after a1, 5d
+                I2S 麥克風與擴大機接線   :b2, after b1, 3d
+                DMA 雙緩衝實作與音訊 Loopback :crit, b3, after b2, 10d
+                
+                section 階段三：通訊中繼
+                ESP32 UART 轉 TCP 韌體開發 :c1, after b3, 7d
+                STM32 串接 ESP32 封包除錯  :c2, after c1, 7d
+                
+                section 階段四：全鏈路整合
+                全系統音訊與推論串流測試   :d1, after c2, 10d
+                OLED SPI 介面與按鍵中斷實作 :d2, after d1, 7d
+                
+                section 階段五：收尾
+                系統穩定度測試與 Bug 修正 :e1, after d2, 7d
+                期末報告與簡報製作        :e2, after d2, 7d
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>材料與預算清單</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>品名</th>
+                    <th>型號/規格</th>
+                    <th>預計價格</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>主控核心板</td><td>STM32F407VET6</td><td>$748</td></tr>
+                <tr><td>Wi-Fi 模組</td><td>ESP32-WROOM-32E (8M)</td><td>$306</td></tr>
+                <tr><td>音訊模組包</td><td>INMP441 + MAX98357A</td><td>$376</td></tr>
+                <tr><td>喇叭單體</td><td>4歐姆 3W 40mm</td><td>$165</td></tr>
+                <tr><td>顯示螢幕</td><td>0.96吋 OLED (7-Pin SPI)</td><td>$99</td></tr>
+            </tbody>
+        </table>
+        <div class="price-total">總計預算：約 NT$ 1,694 (不含備品)</div>
+    </div>
+
+    <div class="card">
+        <h2>預期成果與測試策略</h2>
+        <p>為降低開發風險並確保專題順利推進，本專案在軟硬體整合前，將採取<strong>「翻譯機模式優先」</strong>的降級測試策略，再逐步推進至<strong>「全功能對話模式」</strong>。</p>
+        
+        <h3>測試階段一：中低延遲「隨身翻譯機」模式 (目前可直接用純軟體測試)</h3>
+        <p>優點：Prompt 簡單明確、無須維持對話上下文記憶，適合初期驗證通訊與音訊轉換的穩定性。</p>
+        <ul>
+            <li><strong>功能描述：</strong>使用者按下按鍵說中文，系統純粹負責將其翻譯成日文（或英文），並透過 TTS 播報出來。</li>
+            <li><strong>AI Prompt 策略：</strong><code>你現在是一個專業的日文翻譯員。無論我說什麼中文，請直接翻譯成具備敬語的自然日文，不要輸出任何解釋字眼。</code></li>
+            <li><strong>音訊合成方案：</strong>選用 GPT-SoVITS (若本地算力夠強) 或 Edge-TTS 生成高還原度的外語語音。</li>
+        </ul>
+
+        <h3>測試階段二：低延遲「智慧語音助理」模式 (終極目標)</h3>
+        <p>當「翻譯機模式」在 STM32 上的通訊與播放都穩定後，再切換 Prompt 進入全對話模式。</p>
+        <ul>
+            <li><strong>流暢對話：</strong>按下按鍵即可與 AI (NVIDIA NIM) 進行語音對話，回應時間挑戰低於 2.5 秒。</li>
+            <li><strong>雙語能力：</strong>支援中、日、英等多國語言翻譯與語境分析。</li>
+            <li><strong>硬體視覺化：</strong>OLED 螢幕即時顯示音量、連線狀態與對話文字。</li>
+        </ul>
+    </div>
+
+</div>
+
+</body>
+</html>

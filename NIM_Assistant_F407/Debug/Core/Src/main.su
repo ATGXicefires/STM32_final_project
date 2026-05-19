@@ -1,0 +1,9 @@
+../Core/Src/main.c:65:13:Test_SendStatus	16	static
+../Core/Src/main.c:70:13:Test_SendUsbStatus	16	static
+../Core/Src/main.c:74:13:Test_SendPingIfDue	24	static
+../Core/Src/main.c:84:13:Test_HandleUartRx	24	static
+../Core/Src/main.c:116:5:main	24	static
+../Core/Src/main.c:218:6:SystemClock_Config	88	static
+../Core/Src/main.c:261:13:MX_USART1_UART_Init	8	static
+../Core/Src/main.c:291:13:MX_GPIO_Init	40	static
+../Core/Src/main.c:331:6:Error_Handler	4	static,ignoring_inline_asm
