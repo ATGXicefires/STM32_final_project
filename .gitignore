@@ -1,5 +1,6 @@
 .metadata/
 .vscode/
+.venv/
 *.log
 *.tmp
 *.bak
@@ -7,4 +8,3 @@
 *~
 Thumbs.db
 Desktop.ini
-

@@ -18,6 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "audio_clip.h"
 #include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -59,8 +60,8 @@ static void Test_SendStatus(const char *message);
 static void Test_SendUsbStatus(const char *message);
 static void Test_SendPingIfDue(uint32_t *last_ping_tick);
 static void Test_HandleUartRx(void);
-static void Test_PlayI2SBeepIfDue(uint32_t *last_beep_tick);
-static void Test_PlayI2SBeep(void);
+static void Test_PlayAudioClipIfDue(uint32_t *last_audio_tick);
+static void Test_PlayAudioClip(void);
 
 /* USER CODE END PFP */
 
@@ -111,34 +112,34 @@ static void Test_HandleUartRx(void) {
   }
 }
 
-static void Test_PlayI2SBeepIfDue(uint32_t *last_beep_tick) {
-  if ((HAL_GetTick() - *last_beep_tick) >= 3000U) {
-    *last_beep_tick = HAL_GetTick();
-    Test_PlayI2SBeep();
+static void Test_PlayAudioClipIfDue(uint32_t *last_audio_tick) {
+  if ((HAL_GetTick() - *last_audio_tick) >= 10000U) {
+    *last_audio_tick = HAL_GetTick();
+    Test_PlayAudioClip();
   }
 }
 
-static void Test_PlayI2SBeep(void) {
-  static uint16_t beep_buffer[128];
-  static uint8_t buffer_ready = 0;
+static void Test_PlayAudioClip(void) {
+  uint16_t tx_buffer[128];
+  uint32_t sample_index = 0;
 
-  if (buffer_ready == 0U) {
-    for (uint16_t frame = 0; frame < 64U; frame++) {
-      int16_t sample = (((frame / 8U) % 2U) == 0U) ? 9000 : -9000;
-      beep_buffer[frame * 2U] = (uint16_t)sample;
-      beep_buffer[(frame * 2U) + 1U] = (uint16_t)sample;
+  while (sample_index < AUDIO_CLIP_SAMPLE_COUNT) {
+    uint16_t frames = 0;
+
+    while ((frames < 64U) && (sample_index < AUDIO_CLIP_SAMPLE_COUNT)) {
+      int16_t sample = audio_clip[sample_index++];
+      tx_buffer[frames * 2U] = (uint16_t)sample;
+      tx_buffer[(frames * 2U) + 1U] = (uint16_t)sample;
+      frames++;
     }
-    buffer_ready = 1U;
-  }
 
-  for (uint8_t repeat = 0; repeat < 50U; repeat++) {
-    if (HAL_I2S_Transmit(&hi2s2, beep_buffer, 128, 100) != HAL_OK) {
-      Test_SendUsbStatus("I2S beep error\r\n");
+    if (HAL_I2S_Transmit(&hi2s2, tx_buffer, frames * 2U, 100) != HAL_OK) {
+      Test_SendUsbStatus("I2S audio clip error\r\n");
       return;
     }
   }
 
-  Test_SendUsbStatus("I2S beep sent\r\n");
+  Test_SendUsbStatus("I2S audio clip sent\r\n");
 }
 
 /* USER CODE END 0 */
@@ -178,7 +179,7 @@ int main(void) {
   /* USER CODE BEGIN 2 */
   uint32_t last_blink_tick = HAL_GetTick();
   uint32_t last_ping_tick = HAL_GetTick();
-  uint32_t last_beep_tick = HAL_GetTick();
+  uint32_t last_audio_tick = HAL_GetTick();
   uint8_t blink_state = 0;
   uint8_t last_button_state = 0xFF;
 
@@ -187,7 +188,7 @@ int main(void) {
   Test_SendStatus("GPIO/Button test ready\r\n");
   Test_SendStatus("USART1 USB-TTL echo test ready\r\n");
   Test_SendStatus("ESP32 UART PING/PONG test ready\r\n");
-  Test_SendUsbStatus("I2S2 MAX98357A beep test ready\r\n");
+  Test_SendUsbStatus("I2S2 MAX98357A audio clip test ready\r\n");
   Test_SendStatus("Type characters in Tera Term\r\n");
   /* USER CODE END 2 */
 
@@ -239,7 +240,7 @@ int main(void) {
     // 透過 USB 傳送資料
     Test_SendPingIfDue(&last_ping_tick);
     Test_HandleUartRx();
-    Test_PlayI2SBeepIfDue(&last_beep_tick);
+    Test_PlayAudioClipIfDue(&last_audio_tick);
     HAL_Delay(20);
 
     /* USER CODE END WHILE */

@@ -65,6 +65,19 @@ Date: 2026-05-19
 - Firmware sends a short blocking I2S beep every 3 seconds and reports `I2S beep sent` through USB CDC.
 - Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
 - Hardware audio output still needs manual flashing and speaker test.
+- Hardware beep test passed at 3.3V with speaker connected.
+
+### Stage 5 Follow-up: Embedded WAV Clip
+
+- Source WAV: `D:\AI_Voices\koharu_GPTSoVITS模型\参考音频\CH0205_Lobby_5.wav`.
+- Source format: mono, 16-bit PCM, 44.1 kHz, about 4.108 seconds.
+- Converted firmware clip:
+  - `NIM_Assistant_F407/Core/Inc/audio_clip.h`
+  - 16 kHz mono, 16-bit PCM
+  - 35% gain to reduce loudness
+- Firmware now sends the converted clip through I2S2 every 10 seconds.
+- Playback is currently blocking; button and UART processing pause during the roughly 4-second clip.
+- Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
 
 ## Current Firmware Behavior
 
@@ -73,8 +86,8 @@ Date: 2026-05-19
 - Accepts single-byte USART1 input and echoes `RX: <char>`.
 - Sends `PING` over USART1 once per second for the ESP32 UART bridge test.
 - Reports `ESP32 PONG OK` when a full `PONG` line is received.
-- Sends a short I2S2 beep buffer every 3 seconds for MAX98357A testing.
-- Reports `I2S beep sent` over USB CDC after each successful beep transmit.
+- Sends the embedded I2S2 audio clip every 10 seconds for MAX98357A playback testing.
+- Reports `I2S audio clip sent` over USB CDC after each successful clip transmit.
 
 ## Next Checkpoint
 
