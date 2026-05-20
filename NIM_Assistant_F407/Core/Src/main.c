@@ -18,12 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "audio_clip.h"
 #include "usb_device.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "usbd_cdc_if.h"
+#include <stdio.h>
 #include <string.h>
 /* USER CODE END Includes */
 
@@ -47,6 +47,7 @@ UART_HandleTypeDef huart1;
 I2S_HandleTypeDef hi2s2;
 
 /* USER CODE BEGIN PV */
+static uint8_t i2s2_ready = 0;
 
 /* USER CODE END PV */
 
@@ -60,19 +61,28 @@ static void Test_SendStatus(const char *message);
 static void Test_SendUsbStatus(const char *message);
 static void Test_SendPingIfDue(uint32_t *last_ping_tick);
 static void Test_HandleUartRx(void);
-static void Test_PlayAudioClip(void);
+static void Test_FeedI2STx(void);
+static void Test_ReportMicLevelOnce(void);
+static void Test_ReportMicLevelIfDue(uint8_t mic_monitor_enabled,
+                                     uint32_t *last_mic_tick);
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 static void Test_SendStatus(const char *message) {
-  HAL_UART_Transmit(&huart1, (uint8_t *)message, strlen(message), HAL_MAX_DELAY);
-  CDC_Transmit_FS((uint8_t *)message, strlen(message));
+  HAL_UART_Transmit(&huart1, (uint8_t *)message, strlen(message), 10);
+  Test_SendUsbStatus(message);
 }
 
 static void Test_SendUsbStatus(const char *message) {
-  CDC_Transmit_FS((uint8_t *)message, strlen(message));
+  uint8_t retries = 3;
+
+  while ((CDC_Transmit_FS((uint8_t *)message, strlen(message)) == USBD_BUSY) &&
+         (retries > 0U)) {
+    HAL_Delay(1);
+    retries--;
+  }
 }
 
 static void Test_SendPingIfDue(uint32_t *last_ping_tick) {
@@ -80,8 +90,7 @@ static void Test_SendPingIfDue(uint32_t *last_ping_tick) {
 
   if ((HAL_GetTick() - *last_ping_tick) >= 1000U) {
     *last_ping_tick = HAL_GetTick();
-    HAL_UART_Transmit(&huart1, (uint8_t *)ping, strlen(ping), HAL_MAX_DELAY);
-    Test_SendUsbStatus("PING sent\r\n");
+    HAL_UART_Transmit(&huart1, (uint8_t *)ping, strlen(ping), 10);
   }
 }
 
@@ -89,12 +98,8 @@ static void Test_HandleUartRx(void) {
   static char line_buffer[16];
   static uint8_t line_index = 0;
   uint8_t rx_byte;
-  char response[] = "RX: x\r\n";
 
   if (HAL_UART_Receive(&huart1, &rx_byte, 1, 0) == HAL_OK) {
-    response[4] = (char)rx_byte;
-    Test_SendStatus(response);
-
     if ((rx_byte == '\r') || (rx_byte == '\n')) {
       if (line_index > 0U) {
         line_buffer[line_index] = '\0';
@@ -107,31 +112,109 @@ static void Test_HandleUartRx(void) {
       line_buffer[line_index++] = (char)rx_byte;
     } else {
       line_index = 0;
+      Test_SendUsbStatus("UART RX overflow\r\n");
     }
   }
 }
 
-static void Test_PlayAudioClip(void) {
-  uint16_t tx_buffer[128];
-  uint32_t sample_index = 0;
+/*
+ * Feed I2S master TX DR to keep BCLK/WS running.
+ * STM32 I2S master only generates clocks while DR has data to send.
+ * Call this frequently (every main loop iteration) to keep mic clocked.
+ */
+static void Test_FeedI2STx(void) {
+  if (i2s2_ready == 0U)
+    return;
+  if (hi2s2.Instance->SR & I2S_FLAG_TXE) {
+    hi2s2.Instance->DR = 0U;
+  }
+}
 
-  while (sample_index < AUDIO_CLIP_SAMPLE_COUNT) {
-    uint16_t frames = 0;
+static void Test_ReportMicLevelOnce(void) {
+  char message[120];
 
-    while ((frames < 64U) && (sample_index < AUDIO_CLIP_SAMPLE_COUNT)) {
-      int16_t sample = audio_clip[sample_index++];
-      tx_buffer[frames * 2U] = (uint16_t)sample;
-      tx_buffer[(frames * 2U) + 1U] = (uint16_t)sample;
-      frames++;
+  if (i2s2_ready == 0U) {
+    Test_SendUsbStatus("MIC I2S init failed\r\n");
+    return;
+  }
+
+  /* Clear OVR: read DR then SR per reference manual */
+  {
+    volatile uint32_t dummy;
+    dummy = I2SxEXT(hi2s2.Instance)->DR;
+    dummy = I2SxEXT(hi2s2.Instance)->SR;
+    (void)dummy;
+  }
+
+  /*
+   * ICS43434 with SELECT=GND outputs on Right channel (CHSIDE=1).
+   * Read 512 RXNE events, extract Right channel 24-bit samples.
+   */
+  uint32_t level_sum = 0;
+  uint32_t peak = 0;
+  uint32_t count = 0;
+
+  uint16_t high_word = 0;
+  uint8_t got_high = 0;
+
+  for (uint32_t n = 0; n < 512U; n++) {
+    uint32_t guard = 300000U;
+    while (((I2SxEXT(hi2s2.Instance)->SR & I2S_FLAG_RXNE) == 0U) &&
+           (guard > 0U)) {
+      guard--;
+    }
+    if (guard == 0U) {
+      snprintf(message, sizeof(message), "MIC RX timeout at n=%lu\r\n",
+               (unsigned long)n);
+      Test_SendUsbStatus(message);
+      return;
     }
 
-    if (HAL_I2S_Transmit(&hi2s2, tx_buffer, frames * 2U, 100) != HAL_OK) {
-      Test_SendUsbStatus("I2S audio clip error\r\n");
-      return;
+    uint16_t sr = (uint16_t)(I2SxEXT(hi2s2.Instance)->SR);
+    uint16_t dr = (uint16_t)(I2SxEXT(hi2s2.Instance)->DR);
+
+    if (hi2s2.Instance->SR & I2S_FLAG_TXE) {
+      hi2s2.Instance->DR = 0U;
+    }
+
+    /* Right channel = CHSIDE 1 = ICS43434 mic data */
+    if (sr & I2S_FLAG_CHSIDE) {
+      if (got_high == 0U) {
+        high_word = dr;
+        got_high = 1U;
+      } else {
+        uint32_t raw = ((uint32_t)high_word << 16) | dr;
+        int32_t sample = ((int32_t)raw) >> 8;
+        uint32_t mag = (sample < 0) ? (uint32_t)(-sample) : (uint32_t)sample;
+        level_sum += mag;
+        if (mag > peak) {
+          peak = mag;
+        }
+        count++;
+        got_high = 0U;
+      }
+    } else {
+      got_high = 0U; /* Left channel — reset */
     }
   }
 
-  Test_SendUsbStatus("I2S audio clip sent\r\n");
+  uint32_t avg = (count > 0U) ? (level_sum / count) : 0U;
+
+  snprintf(message, sizeof(message), "MIC avg:%lu peak:%lu n:%lu\r\n",
+           (unsigned long)avg, (unsigned long)peak, (unsigned long)count);
+  Test_SendUsbStatus(message);
+}
+
+static void Test_ReportMicLevelIfDue(uint8_t mic_monitor_enabled,
+                                     uint32_t *last_mic_tick) {
+  if (mic_monitor_enabled == 0U) {
+    return;
+  }
+  if ((HAL_GetTick() - *last_mic_tick) < 300U) {
+    return;
+  }
+  *last_mic_tick = HAL_GetTick();
+  Test_ReportMicLevelOnce();
 }
 
 /* USER CODE END 0 */
@@ -165,21 +248,38 @@ int main(void) {
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  HAL_GPIO_WritePin(LED_D2_GPIO_Port, LED_D2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(LED_D3_GPIO_Port, LED_D3_Pin, GPIO_PIN_SET);
+
   MX_I2S2_Init();
+
+  /* Start I2S and kick-start clocks so mic begins warming up immediately */
+  if (i2s2_ready != 0U) {
+    __HAL_I2SEXT_ENABLE(&hi2s2);
+    __HAL_I2S_ENABLE(&hi2s2);
+    /* Write first zero to DR to start BCLK/WS generation */
+    hi2s2.Instance->DR = 0U;
+  }
+
   MX_USART1_UART_Init();
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN 2 */
   uint32_t last_blink_tick = HAL_GetTick();
   uint32_t last_ping_tick = HAL_GetTick();
+  uint32_t last_mic_tick = HAL_GetTick();
   uint8_t blink_state = 0;
   uint8_t last_button_state = 0xFF;
+  uint8_t mic_monitor_enabled = 0;
 
-  HAL_GPIO_WritePin(LED_D2_GPIO_Port, LED_D2_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(LED_D3_GPIO_Port, LED_D3_Pin, GPIO_PIN_SET);
   Test_SendStatus("GPIO/Button test ready\r\n");
   Test_SendStatus("USART1 USB-TTL echo test ready\r\n");
   Test_SendStatus("ESP32 UART PING/PONG test ready\r\n");
-  Test_SendUsbStatus("I2S2 MAX98357A audio clip test ready\r\n");
+  if (i2s2_ready != 0U) {
+    Test_SendUsbStatus("INMP441 mic monitor ready: K1 toggles ON/OFF\r\n");
+  } else {
+    Test_SendUsbStatus("INMP441 mic level test disabled: I2S init failed\r\n");
+  }
   Test_SendStatus("Type characters in Tera Term\r\n");
   /* USER CODE END 2 */
 
@@ -222,17 +322,30 @@ int main(void) {
       } else if (button_state == 0x01) {
         Test_SendStatus("K0 pressed\r\n");
       } else if (button_state == 0x02) {
-        Test_SendStatus("K1 pressed\r\n");
-        Test_PlayAudioClip();
+        mic_monitor_enabled ^= 1U;
+        if (mic_monitor_enabled != 0U) {
+          Test_SendStatus("K1 pressed: MIC monitor ON\r\n");
+          last_mic_tick = 0;
+        } else {
+          Test_SendStatus("K1 pressed: MIC monitor OFF\r\n");
+        }
       } else {
         Test_SendStatus("Buttons released\r\n");
       }
     }
 
-    // 透過 USB 傳送資料
+    /* Keep ESP32 UART bridge ping running while mic monitor is active. */
     Test_SendPingIfDue(&last_ping_tick);
     Test_HandleUartRx();
-    HAL_Delay(20);
+    Test_ReportMicLevelIfDue(mic_monitor_enabled, &last_mic_tick);
+
+    /* Wait ~20ms while keeping I2S BCLK/WS alive */
+    {
+      uint32_t wait_start = HAL_GetTick();
+      while ((HAL_GetTick() - wait_start) < 20U) {
+        Test_FeedI2STx();
+      }
+    }
 
     /* USER CODE END WHILE */
 
@@ -308,15 +421,17 @@ static void MX_I2S2_Init(void) {
   hi2s2.Instance = SPI2;
   hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
   hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_24B;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
   hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_16K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
   hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
-  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_ENABLE;
   if (HAL_I2S_Init(&hi2s2) != HAL_OK) {
-    Error_Handler();
+    i2s2_ready = 0;
+    return;
   }
+  i2s2_ready = 1;
   /* USER CODE BEGIN I2S2_Init 2 */
 
   /* USER CODE END I2S2_Init 2 */
@@ -399,9 +514,19 @@ static void MX_GPIO_Init(void) {
  */
 void Error_Handler(void) {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  GPIO_InitStruct.Pin = LED_D2_Pin | LED_D3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   while (1) {
+    HAL_GPIO_TogglePin(LED_D2_GPIO_Port, LED_D2_Pin);
+    HAL_GPIO_TogglePin(LED_D3_GPIO_Port, LED_D3_Pin);
+    HAL_Delay(100);
   }
   /* USER CODE END Error_Handler_Debug */
 }

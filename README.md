@@ -13,7 +13,7 @@
 graph TD
 %% 定義硬體終端
 subgraph Edge_Terminal [STM32 硬體感知層]
-    MIC[INMP441 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
+    MIC[ICS43434 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
     DMA_RX -->|雙緩衝| MCU_CORE[STM32 邏輯中心]
     MCU_CORE -->|SPI| OLED[OLED 顯示]
     MCU_CORE -->|GPIO| BTN[實體按鍵]
@@ -60,7 +60,7 @@ style NIM_API fill:#000,color:#fff,stroke:#76B900,stroke-width:3px
     *   **雲端串接：**整合 NVIDIA NIM 跑大型語言模型。
     *   **TTS 合成：**生成高品質人聲並串流回邊緣裝置。
 *   **Audio I/O: Peripherals (Mic / Amp)**
-    *   **INMP441：**提供低底噪、全向性的數位聲音輸入。
+    *   **ICS43434：**提供低底噪、全向性的 I2S 數位麥克風。SELECT=GND 時輸出在右聲道 (CHSIDE=1)。
     *   **MAX98357A：**高效率 Class D 功率放大，直接驅動喇叭。
 
 ---
@@ -82,35 +82,24 @@ style NIM_API fill:#000,color:#fff,stroke:#76B900,stroke-width:3px
 
 ## 開發進度排程 (Project Roadmap)
 
-距離 6 月底完工約有 9 週時間，目前處於材料採購階段。採用「先軟後硬、分段驗收」策略以降低風險。
+採用「先軟後硬、分段驗收」策略以降低風險。
 
-```mermaid
-gantt
-    title 專題開發里程碑 (4月下旬 ~ 6月底)
-    dateFormat  MM-DD
-    axisFormat  %m/%d
-    
-    section 階段一：備料與軟體
-    材料採購與等待到貨     :active, a1, 04-21, 7d
-    PC Python 伺服器與 NIM API 測試 :a2, 04-21, 10d
-    
-    section 階段二：底層硬體 (大魔王)
-    STM32 環境建置與 LED/UART 測試 :b1, after a1, 5d
-    I2S 麥克風與擴大機接線   :b2, after b1, 3d
-    DMA 雙緩衝實作與音訊 Loopback :crit, b3, after b2, 10d
-    
-    section 階段三：通訊中繼
-    ESP32 UART 轉 TCP 韌體開發 :c1, after b3, 7d
-    STM32 串接 ESP32 封包除錯  :c2, after c1, 7d
-    
-    section 階段四：全鏈路整合
-    全系統音訊與推論串流測試   :d1, after c2, 10d
-    OLED SPI 介面與按鍵中斷實作 :d2, after d1, 7d
-    
-    section 階段五：收尾
-    系統穩定度測試與 Bug 修正 :e1, after d2, 7d
-    期末報告與簡報製作        :e2, after d2, 7d
-```
+### ✅ 已完成
+- Stage 1：GPIO / LED 測試
+- Stage 2：按鍵輸入測試
+- Stage 3：USART1 USB-TTL 測試
+- Stage 4：ESP32 UART PING/PONG 測試
+- Stage 5：MAX98357A I2S 喇叭播放 + 嵌入式 WAV 測試
+- Stage 6：ICS43434 麥克風 I2S 收音測試 ✅ (2026-05-20 解決)
+
+### 🔧 進行中
+- Stage 7：Audio Loopback（麥克風 → 喇叭即時回放）
+
+### 📋 待完成
+- Stage 8：ESP32 音訊串流傳輸
+- Stage 9：全鏈路 ASR → NIM → TTS → 播放
+- Stage 10：OLED 顯示與 UI 調教
+- Stage 11：系統穩定度測試與期末報告
 
 ---
 
@@ -120,7 +109,7 @@ gantt
 | :--- | :--- | :--- |
 | 主控核心板 | STM32F407VET6 | $748 |
 | Wi-Fi 模組 | ESP32-WROOM-32E (8M) | $306 |
-| 音訊模組包 | INMP441 + MAX98357A | $376 |
+| 音訊模組包 | ICS43434 (標示 INMP441) + MAX98357A | $376 |
 | 喇叭單體 | 4歐姆 3W 40mm | $165 |
 | 顯示螢幕 | 0.96吋 OLED (7-Pin SPI) | $99 |
 
