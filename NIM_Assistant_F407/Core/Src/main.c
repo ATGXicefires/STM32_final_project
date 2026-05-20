@@ -60,7 +60,6 @@ static void Test_SendStatus(const char *message);
 static void Test_SendUsbStatus(const char *message);
 static void Test_SendPingIfDue(uint32_t *last_ping_tick);
 static void Test_HandleUartRx(void);
-static void Test_PlayAudioClipIfDue(uint32_t *last_audio_tick);
 static void Test_PlayAudioClip(void);
 
 /* USER CODE END PFP */
@@ -109,13 +108,6 @@ static void Test_HandleUartRx(void) {
     } else {
       line_index = 0;
     }
-  }
-}
-
-static void Test_PlayAudioClipIfDue(uint32_t *last_audio_tick) {
-  if ((HAL_GetTick() - *last_audio_tick) >= 10000U) {
-    *last_audio_tick = HAL_GetTick();
-    Test_PlayAudioClip();
   }
 }
 
@@ -179,7 +171,6 @@ int main(void) {
   /* USER CODE BEGIN 2 */
   uint32_t last_blink_tick = HAL_GetTick();
   uint32_t last_ping_tick = HAL_GetTick();
-  uint32_t last_audio_tick = HAL_GetTick();
   uint8_t blink_state = 0;
   uint8_t last_button_state = 0xFF;
 
@@ -232,6 +223,7 @@ int main(void) {
         Test_SendStatus("K0 pressed\r\n");
       } else if (button_state == 0x02) {
         Test_SendStatus("K1 pressed\r\n");
+        Test_PlayAudioClip();
       } else {
         Test_SendStatus("Buttons released\r\n");
       }
@@ -240,7 +232,6 @@ int main(void) {
     // 透過 USB 傳送資料
     Test_SendPingIfDue(&last_ping_tick);
     Test_HandleUartRx();
-    Test_PlayAudioClipIfDue(&last_audio_tick);
     HAL_Delay(20);
 
     /* USER CODE END WHILE */

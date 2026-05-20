@@ -75,7 +75,7 @@ Date: 2026-05-19
   - `NIM_Assistant_F407/Core/Inc/audio_clip.h`
   - 16 kHz mono, 16-bit PCM
   - 35% gain to reduce loudness
-- Firmware now sends the converted clip through I2S2 every 10 seconds.
+- Firmware plays the converted clip through I2S2 once when K1 is pressed.
 - Playback is currently blocking; button and UART processing pause during the roughly 4-second clip.
 - Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
 
@@ -86,7 +86,7 @@ Date: 2026-05-19
 - Accepts single-byte USART1 input and echoes `RX: <char>`.
 - Sends `PING` over USART1 once per second for the ESP32 UART bridge test.
 - Reports `ESP32 PONG OK` when a full `PONG` line is received.
-- Sends the embedded I2S2 audio clip every 10 seconds for MAX98357A playback testing.
+- Sends the embedded I2S2 audio clip once when K1 is pressed for MAX98357A playback testing.
 - Reports `I2S audio clip sent` over USB CDC after each successful clip transmit.
 
 ## Next Checkpoint
