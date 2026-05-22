@@ -1,272 +1,73 @@
 # STM32 Final Project Progress
 
-Date: 2026-05-19
+Last updated: 2026-05-22
 
-## Hardware
+這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
-- Main board: STM32F407VET6 black board.
-- D1 is the power LED and stays on by design.
-- D2 and D3 are user-controllable LEDs.
-- Current STM32 flashing flow: build `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`, then manually flash with USB DFU by following `walkthrough2.md`.
+## Stage Status
 
-## Completed Checkpoints
-
-### Stage 1: GPIO / LED
-
-- D2 is mapped to `PA6`.
-- D3 is mapped to `PA7`.
-- D2/D3 are active-low LEDs:
-  - `GPIO_PIN_RESET` turns the LED on.
-  - `GPIO_PIN_SET` turns the LED off.
-- Verified behavior:
-  - D2/D3 alternate blink when no button is pressed.
-
-### Stage 2: Button Input
-
-- K0 is mapped to `PE4`.
-- K1 is mapped to `PE3`.
-- Inputs use pull-up logic; pressed state is read as low.
-- Verified behavior:
-  - K0 turns D2 on and D3 off.
-  - K1 turns D2 off and D3 on.
-  - K0 + K1 turns both D2 and D3 on.
-
-### Stage 3: USART1 USB-TTL
-
-- USART1 is configured as `115200 8N1`.
-- `PA9` is USART1 TX.
-- `PA10` is USART1 RX.
-- USB-TTL echo test passed after swapping the USB-TTL TX/RX wiring.
-- Practical note: the USB-TTL adapter labels can be misleading. Use the wiring that passes echo testing.
-- Verified behavior:
-  - Tera Term on the USB-TTL COM port can send characters to STM32.
-  - STM32 replies with `RX: <char>`.
-  - STM32 USB CDC also reports the received characters and button events.
-
-### Stage 4: ESP32 UART PING/PONG
-
-- STM32 USART1 remains `PA9` TX and `PA10` RX at `115200 8N1`.
-- ESP32 test firmware uses `Serial2` at `115200 8N1`.
-- Verified behavior:
-  - STM32 sends `PING`.
-  - ESP32 replies `PONG`.
-  - STM32 reports `ESP32 PONG OK` through USB CDC.
-
-### Stage 5: MAX98357A I2S Beep
-
-- STM32 I2S2 is configured as master transmit, `16 kHz`, `16-bit`, Philips I2S.
-- MAX98357A wiring target:
-  - `PB13` -> `BCLK`
-  - `PB12` -> `LRC / WS`
-  - `PB15` -> `DIN`
-  - `GND` <-> common ground
-  - `VIN` -> 3.3V or 5V according to the MAX98357A module label
-- MCLK is disabled because MAX98357A does not require it.
-- Firmware sends a short blocking I2S beep every 3 seconds and reports `I2S beep sent` through USB CDC.
-- Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
-- Hardware audio output still needs manual flashing and speaker test.
-- Hardware beep test passed at 3.3V with speaker connected.
-
-### Stage 5 Follow-up: Embedded WAV Clip
-
-- Source WAV: `D:\AI_Voices\koharu_GPTSoVITS模型\参考音频\CH0205_Lobby_5.wav`.
-- Source format: mono, 16-bit PCM, 44.1 kHz, about 4.108 seconds.
-- Converted firmware clip:
-  - `NIM_Assistant_F407/Core/Inc/audio_clip.h`
-  - 16 kHz mono, 16-bit PCM
-  - 35% gain to reduce loudness
-- Firmware plays the converted clip through I2S2 once when K1 is pressed.
-- Playback is currently blocking; button and UART processing pause during the roughly 4-second clip.
-- Compile-only verification passed and produced `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`.
+| Stage | Status | Result |
+| :--- | :--- | :--- |
+| 1. GPIO / LED | Done | D2=`PA6`、D3=`PA7`，active-low，交替閃爍正常 |
+| 2. Button input | Done | K0=`PE4`、K1=`PE3`，pull-up，按下為 low |
+| 3. USART1 USB-TTL | Done | `PA9/PA10`，115200 8N1，echo 測試通過 |
+| 4. ESP32 UART PING/PONG | Done | STM32 sends `PING`，ESP32 replies `PONG` |
+| 5. MAX98357A I2S playback | Done | I2S2 TX 播放 beep 與 embedded WAV clip 通過 |
+| 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
+| 7. Audio loopback | In progress | K0 播放通過；K1 record-then-playback 已可辨識語音，含 IIR LPF + noise gate；live loopback 暫停 |
+| 8. ESP32 audio streaming | Todo | 定義 UART audio packet，轉 TCP 到 PC |
+| 9. ASR -> NIM -> TTS -> playback | Todo | PC server、ASR/TTS 串接與回放 |
+| 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
+| 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
 
 ## Current Firmware Behavior
 
-- Preserves GPIO/Button test behavior.
-- Sends debug text over USART1 and USB CDC.
-- Accepts single-byte USART1 input and echoes `RX: <char>`.
-- Sends `PING` over USART1 once per second for the ESP32 UART bridge test.
-- Reports `ESP32 PONG OK` when a full `PONG` line is received.
-- K1 toggles microphone monitor ON/OFF.
-- I2S2 master TX continuously feeds DR=0 via busy-wait in main loop to keep
-  BCLK/WS alive for the microphone.
-- CDC_Transmit_FS has retry logic (up to 3 retries with 1ms delay) when BUSY.
-- UART RX buffer overflow is now logged.
+- 保留 GPIO/Button 測試行為，K0 會觸發播放內建測試音效。
+- 透過 USART1 與 USB CDC 輸出 debug log。
+- USART1 目前用於接收 ESP32 的 `PONG` 回覆。
+- 每秒送出 `PING` 給 ESP32，收到 `PONG` 時輸出 `ESP32 PONG OK`。
+- K1 啟動 0.5 秒麥克風錄音（`RECORD_SAMPLE_COUNT 8000`），錄到 RAM buffer 後播放，**已可辨識語音**。
+- 錄音信號處理鏈：DC removal → invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）→ gain（`RECORD_GAIN 12`）。
+- Invalid sample 使用 filter decay 而非硬切 0，避免突然靜音造成 pop。
+- I2S2 master TX 會持續餵 `SPI_DR`，維持 BCLK/WS，避免麥克風失去 clock。
+- K0 播放 `audio_test/test.wav` 轉出的 `audio_clip`，用來驗證 MAX98357A 與喇叭輸出路徑。
+- 麥克風目前主要在 left channel 有有效資料。
+- 錄完時 USB CDC 會輸出 `Mic record done: playback start inv ... Lavg ... Lpk ... Ravg ... Rpk ... ovr ...` 與前 16 筆 PCM 值的 dump。
+- live speaker loopback 已關閉：`LOOPBACK_SPEAKER_ENABLE 0U`，避免尖叫、爆音與聲學回授。
+- 內建 `RECORD_TEST_TONE` 開關可切換為 400Hz 三角波測試音，驗證 playback path。
 
-## Next Checkpoint
+## Hardware Notes
 
-Stage 6 microphone diagnosis must be resolved at the hardware level before
-proceeding to audio loopback.
+### STM32F407VET6
 
-## Current Investigation: I2S Microphone Input
+- D1 是 power LED，常亮是正常現象。
+- D2=`PA6`、D3=`PA7`，都是 active-low。
+- K0=`PE4`、K1=`PE3`，都是 pull-up input。
+- 目前這塊板子的 SWD 連不上，正式燒錄流程改走 USB DFU。
 
-### Stage 6: INMP441 / ICS43434 Mic Level Test
+### USART1 / ESP32
 
-- Goal: verify I2S microphone input before attempting MAX98357A loopback.
-- Microphone module label observed: `ICS43434` even though the package was
-  marked as `INMP441`.
-- Expected compatibility:
-  - Both INMP441 and ICS43434 are I2S MEMS microphones.
-  - The test can still use STM32 I2S clock + word select + data input.
-- STM32 I2S2 configuration:
-  - `PB13` = I2S2_CK / BCLK / microphone `SCK`
-  - `PB12` = I2S2_WS / LRCLK / microphone `WS`
-  - `PB14` = I2S2ext_SD / microphone `SD` or `DOUT` (AF6_I2S2ext)
-  - `PB15` = I2S2_SD / master TX out (for MAX98357A speaker)
-  - I2S2 full-duplex mode enabled
-  - 24-bit I2S data format, Philips standard
-  - 16 kHz audio frequency
-  - MCLK disabled
-- Microphone wiring used for test:
-  - `VDD` -> `3.3V`
-  - `GND` -> `GND`
-  - `SCK` -> `PB13`
-  - `WS` -> `PB12`
-  - `SD` / `DOUT` -> `PB14`
-  - `L/R` tested with both `GND` and `3.3V`
-- MAX98357A is not required for this microphone-only test and can remain
-  disconnected.
+- STM32 USART1：`PA9` TX、`PA10` RX，115200 8N1。
+- ESP32 測試 firmware 使用 `Serial2`，115200 8N1。
+- USB-TTL 標籤可能不準，實務上以 echo 測試成功的 TX/RX 交叉接法為準。
 
-### Software Investigation Steps (2026-05-20)
+### I2S2 Audio
 
-The following firmware changes were applied iteratively to diagnose the mic
-input failure. Each step eliminated a potential software cause.
+- `PB13` = I2S2_CK / BCLK。
+- `PB12` = I2S2_WS / LRCLK。
+- `PB14` = I2S2ext_SD / microphone SD/DOUT。
+- `PB15` = I2S2_SD / MAX98357A DIN。
+- MAX98357A 不需要 MCLK。
+- ICS43434 / INMP441 datasheet 標示 `L/R=GND` 為 left channel、`L/R=3.3V` 為 right channel；目前實測有效資料主要在 left channel。
+- MIC `SD/DOUT` 已建議加 `100kΩ` pull-down 到 GND，降低 inactive channel 浮動。
 
-#### Step 1: Switch from manual register polling to HAL API
+## Current Checkpoint
 
-- **Change**: replaced hand-written SPI DR/SR register polling with
-  `HAL_I2SEx_TransmitReceive(&hi2s2, txBuf, rxBuf, 32, 500)`.
-- **Result**: HAL returned `HAL_OK` (`state:1 code:0`), confirming the I2S
-  peripheral state machine is functional.
-- **Finding**: `rx_buf` first 4 words were `00000000`, but `level:49 peak:564`
-  indicated non-zero data existed in later indices.
+Stage 7 record-then-playback 已可辨識語音。K0 證明輸出路徑正常；K1 錄音經過 LPF、noise gate 與 invalid decay 處理後，回放可聽出人聲與環境音，但仍有背景雜訊。polling 路徑偶有 `ovr`，後續應改 I2S DMA circular buffer 進一步降低雜訊。
 
-#### Step 2: Full rx_buf hex dump
+## Next Work
 
-- **Change**: printed all 64 `uint16_t` entries as hex (8 per line).
-- **Result**: non-zero values appeared at indices 25–61. Pattern:
-  - Every 4th `uint16_t` pair (left channel) had data.
-  - Alternating pairs (right channel) were all zero.
-  - First non-zero index: 25.
-- **Finding**: microphone data appeared on the **left channel** (consistent
-  with INMP441 behavior with L/R=GND, not ICS43434).
-
-#### Step 3: Left-channel extraction with startup skip
-
-- **Change**: extracted only left-channel samples (`rx_buf[i*4]` and
-  `rx_buf[i*4+1]`), skipped first 16 stereo frames.
-- **Result**: `avg:2412536 peak:4492256 first:220272 last:-2633792`, but
-  values were **exactly the same every reading**. No reaction to sound.
-- **Finding**: data was the deterministic I2S startup transient, not live
-  audio.
-
-#### Step 4: OVR (overrun) clearing with I2S disable
-
-- **Change**: added `__HAL_I2S_DISABLE` / `__HAL_I2SEXT_DISABLE`, flushed
-  stale DR/SR, reset HAL state, then called `HAL_I2SEx_TransmitReceive`.
-- **Result**: still the same constant values.
-- **Finding**: disabling I2S stops BCLK → mic loses clocks → always re-enters
-  startup transient.
-
-#### Step 5: OVR clearing without disable + manual RXNE polling
-
-- **Change**: cleared OVR by reading ext DR+SR only (no disable), then
-  manually polled RXNE for fresh data.
-- **Result**: values cycled through 4 fixed states.
-- **Finding**: frame alignment issue — starting poll at different phases
-  within the 4-word stereo frame.
-
-#### Step 6: CHSIDE frame synchronization
-
-- **Change**: used `I2S_FLAG_CHSIDE` bit to sync to Left channel boundary
-  before recording data.
-- **Result**: no more 4-state cycling, but values still constant.
-- **Finding**: frame alignment fixed, but stale data problem remained.
-
-#### Step 7: Large warmup skip (4096 RXNE, skip first 3072)
-
-- **Change**: polled 4096 RXNE events (~128ms), discarded first 3072 (~96ms
-  warmup), analyzed only the last 1024.
-- **Result**: `MIC RX timeout at n=0`.
-- **Finding**: clearing OVR consumed the last available DR value, and without
-  continuous TX feeding, no new clocks were generated → RXNE never set.
-
-#### Step 8: Root cause identified — I2S master TX clock generation
-
-- **Discovery**: STM32 I2S master TX only generates BCLK/WS when data is
-  written to `SPI_DR`. Without continuous TX feeding, clocks stop after each
-  frame, and the microphone never receives sustained clocking.
-- **This explained all previous symptoms**:
-  - `HAL_I2SEx_TransmitReceive` temporarily started clocks (by writing DR),
-    producing the startup transient, then clocks stopped.
-  - Each call re-started clocks → same startup transient every time.
-  - Manual polling without TX writes → no clocks → timeout.
-
-#### Step 9: Continuous TX feeding
-
-- **Change**:
-  - Added `Test_FeedI2STx()`: checks TXE and writes `DR=0` when empty.
-  - At init: wrote first zero to DR immediately after `__HAL_I2S_ENABLE` to
-    kick-start clock generation.
-  - Replaced `HAL_Delay(20)` with busy-wait loop that calls
-    `Test_FeedI2STx()` continuously during the 20ms wait.
-- **Result**: `MIC avg:0 peak:0 first:0 last:0 n:128`.
-- **Finding**: I2S clocks are now running continuously. The ext RX receives
-  fresh data (RXNE fires, no timeout). **But all received data is zero.**
-
-#### Step 10: Hardware probing and dual-channel test
-
-- **Hardware probing results**:
-  - PB13 (SCK): confirmed clock present (~1.6V DC average) ✅
-  - PB12 (WS): confirmed WS signal present (~1.6V DC average) ✅
-  - PB14 disconnected (floating): random noise values → PB14 I2S ext ✅
-  - PB14 connected to 3.3V: near-max values → PB14 I2S ext ✅
-  - PB14 connected to mic: all zeros → mic SD not driving data
-  - Two different ICS43434 modules tested: same result → not a defective module
-- **Software change**: modified firmware to read and report **both Left and
-  Right channels** independently.
-- **Result**: **Right channel (CHSIDE=1) has mic data!** Left channel is zero.
-  Values react to sound: quiet ~1000, loud sounds up to ~8,000,000.
-- **Root cause**: ICS43434 with SELECT=GND outputs on the **Right channel**
-  (CHSIDE=1), not the Left channel as assumed.
-
-### Resolution Summary
-
-Two independent root causes were discovered and fixed:
-
-1. **I2S master TX must continuously feed DR to generate BCLK/WS.**
-   STM32 I2S master only generates clocks when `SPI_DR` has data to send.
-   Without continuous TX feeding, clocks stop between frames, causing the
-   microphone to repeatedly enter its startup transient. Fixed by adding
-   `Test_FeedI2STx()` in the main loop busy-wait.
-
-2. **ICS43434 with SELECT=GND outputs on Right channel (CHSIDE=1).**
-   Despite being sold as INMP441, the actual IC is ICS43434, which maps
-   SELECT=GND to the Right I2S channel (opposite of our initial assumption).
-   Fixed by reading CHSIDE=1 data instead of CHSIDE=0.
-
-### Stage 6 Completion
-
-- ✅ Microphone receives valid I2S data from ICS43434.
-- ✅ Sound level monitoring works: K1 toggles ON/OFF, USB CDC prints
-  `MIC avg:<level> peak:<peak> n:<sample_count>`.
-- ✅ Values react to ambient sound (quiet ~1000, loud ~8,000,000+).
-- ✅ Continuous I2S clocking via main-loop TX feeding.
-
-## Next Checkpoints
-
-### Stage 7: Audio Loopback (Mic → Speaker)
-
-- Goal: pipe ICS43434 mic input directly to MAX98357A speaker output via I2S2.
-- Requires reconnecting MAX98357A and forwarding right-channel RX samples to
-  TX DR in real-time.
-- Current blocking poll-based approach may need to transition to DMA for
-  latency and reliability.
-
-### Stage 8: ESP32 Audio Streaming
-
-- Goal: stream mic audio over UART to ESP32, then TCP to PC server.
-- Requires defining a packetization protocol for raw PCM data.
-
-### Stage 9: Full Pipeline (ASR → NIM → TTS → Playback)
-
-- Goal: end-to-end voice assistant with NVIDIA NIM cloud inference.
+1. 微調錄音參數（LPF alpha、noise gate threshold、invalid magnitude）以改善信噪比。
+2. 將 I2S RX/TX 改成 DMA circular buffer，消除 polling OVR。
+3. 等 MIC 資料穩定後，定義 STM32 → ESP32 的 raw PCM packet 格式。
+4. 實作 PC TCP server，準備 ASR/NIM/TTS 全鏈路測試。

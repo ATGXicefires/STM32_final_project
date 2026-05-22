@@ -1,141 +1,73 @@
 # Project NIM-Assistant | STM32 AI 語音助理
 
-**基於 STM32 與 NVIDIA NIM 之邊緣運算語音互動助理**
+基於 STM32F407、ESP32 與 NVIDIA NIM 的邊緣語音互動專題。STM32 負責 I2S 音訊、按鍵與硬體控制；ESP32 負責 UART/Wi-Fi 橋接；PC 端負責 ASR、NIM 推論與 TTS 回傳。
 
-## 專案簡介
-本專案實踐了**「端點感知 (Edge) + 邊緣伺服 (PC) + 雲端智腦 (NIM)」**的協同運算架構。STM32 負責即時的 I2S 數位音訊擷取與硬體控制，而繁重的 AI 模型推論與語音合成則交由 PC 中繼站及 NVIDIA 雲端服務完成。這不僅大幅降低了嵌入式設備的負擔，更實現了極具人性化的智慧對話體驗。
+## 目前狀態
 
----
+- Stage 1-6 已完成：GPIO、按鍵、USART1、ESP32 PING/PONG、MAX98357A 播放、ICS43434 I2S 收音。
+- Stage 7 進行中：K0 播放 `audio_test/test.wav` 測試音效正常；K1 record-then-playback **已可辨識語音**（錄 0.5 秒後播放）。
+- 錄音路徑含 IIR low-pass filter（alpha≈1/8）、noise gate（±80）、DC removal 與 invalid sample decay。
+- 目前麥克風有效資料在 left channel；雜訊仍存在但語音可辨識，後續需改 I2S DMA 進一步改善。
 
-## 系統全鏈路資料流圖與硬體職責
+詳細進度請看 [progress.md](progress.md)，開發與燒錄流程請看 [process.md](process.md)。
+
+## 系統架構
 
 ```mermaid
 graph TD
-%% 定義硬體終端
-subgraph Edge_Terminal [STM32 硬體感知層]
-    MIC[ICS43434 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
-    DMA_RX -->|雙緩衝| MCU_CORE[STM32 邏輯中心]
-    MCU_CORE -->|SPI| OLED[OLED 顯示]
-    MCU_CORE -->|GPIO| BTN[實體按鍵]
-    MCU_CORE -->|I2S| DMA_TX[DMA 發送緩衝]
-    DMA_TX -->|類比放大| AMP[MAX98357A]
-    AMP --> SPK[3W 喇叭]
-end
+    subgraph STM32["STM32F407 硬體層"]
+        MIC["ICS43434 MIC"] -->|"I2S RX"| MCU["STM32F407"]
+        BTN["K0 / K1 buttons"] -->|"GPIO"| MCU
+        MCU -->|"I2S TX"| AMP["MAX98357A"]
+        AMP --> SPK["3W speaker"]
+        MCU -->|"USART1"| ESP["ESP32 bridge"]
+    end
 
-%% 定義通訊中繼
-subgraph Communication_Bridge [通訊轉換層]
-    MCU_CORE <-->|High-Speed UART| ESP[ESP32 Bridge]
-    ESP <-->|Wi-Fi TCP Socket| PC_SRV[PC Local Server]
-end
+    subgraph PC["PC 邊緣伺服層"]
+        SERVER["Python local server"]
+        ASR["ASR"]
+        NIM["NVIDIA NIM"]
+        TTS["TTS"]
+        SERVER --> ASR --> NIM --> TTS --> SERVER
+    end
 
-%% 定義後端處理
-subgraph Edge_Compute_Center [PC 邊緣運算中樞]
-    PC_SRV -->|Audio Data| ASR[Whisper ASR 辨識]
-    ASR -->|Prompt| NIM_REQ[API Request 封裝]
-    NIM_REQ <-->|HTTPS| NIM_API[NVIDIA NIM Cloud]
-    NIM_API -->|Text| TTS[Edge-TTS 合成]
-    TTS -->|PCM Stream| PC_SRV
-end
-
-%% 樣式設定
-style Edge_Terminal fill:#f9fff0,stroke:#76B900,stroke-width:2px
-style Communication_Bridge fill:#fff9f0,stroke:#ff9800,stroke-width:2px
-style Edge_Compute_Center fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
-style NIM_API fill:#000,color:#fff,stroke:#76B900,stroke-width:3px
+    ESP <-->|"Wi-Fi TCP"| SERVER
 ```
 
-### 💻 硬體職責劃分
+## 硬體分工
 
-*   **Main Controller: STM32F407VET6**
-    *   **時序管理：**精確產生 I2S 採樣所需之 Master Clock。
-    *   **DMA 管理：**實作雙緩衝 (Ping-Pong Buffer) 機制，確保音訊不中斷。
-    *   **資料流控制：**負責 UART 封裝與解封裝，處理與 ESP32 之間的溝通。
-    *   **UI 更新：**透過 SPI 總線高速更新 OLED 對話狀態。
-*   **Comms Gateway: ESP32-WROOM-32E**
-    *   **網路維護：**管理 Wi-Fi 連線與容錯機制。
-    *   **透明傳輸：**作為高速 UART 轉 TCP Socket 的橋接器。
-    *   **加密處理：**（預留）進行基礎數據加密保護通訊。
-*   **Edge Server: PC (Local Server)**
-    *   **ASR 辨識：**利用電腦算力進行即時語音轉文字。
-    *   **雲端串接：**整合 NVIDIA NIM 跑大型語言模型。
-    *   **TTS 合成：**生成高品質人聲並串流回邊緣裝置。
-*   **Audio I/O: Peripherals (Mic / Amp)**
-    *   **ICS43434：**提供低底噪、全向性的 I2S 數位麥克風。SELECT=GND 時輸出在右聲道 (CHSIDE=1)。
-    *   **MAX98357A：**高效率 Class D 功率放大，直接驅動喇叭。
+- STM32F407VET6：I2S2 full-duplex clock source、音訊取樣/播放、按鍵、狀態輸出。
+- ICS43434 / INMP441 I2S microphone：目前診斷顯示 `L/R=GND` 時有效資料主要在 left channel。
+- MAX98357A：I2S Class D amplifier，接收 STM32 `PB15` 的 I2S2 TX data。
+- ESP32-WROOM-32E：目前用於 UART PING/PONG 測試，後續負責音訊串流到 PC。
+- PC：後續承接 ASR、NVIDIA NIM、TTS 與 TCP server。
 
----
+## 主要檔案
 
-## 製作流程 (Production Workflow)
+- [process.md](process.md)：專案開發流程、燒錄流程、Stage roadmap。
+- [progress.md](progress.md)：目前完成度、當前 firmware 行為、下一步。
+- [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)：USB DFU 燒錄與 SWD 問題整理。
+- [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md)：Stage 6 麥克風排查紀錄。
+- [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)：Stage 7 loopback、K0/K1 測試、接線與 OVR 診斷紀錄。
+- [NIM_Assistant_F407/Core/Src/main.c](NIM_Assistant_F407/Core/Src/main.c)：STM32 firmware 主程式。
+- [ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino](ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino)：ESP32 UART bridge 測試程式。
 
-1.  **硬體電路組建與焊接**
-    將 INMP441 麥克風與 MAX98357A 擴大機模組銲接排針，並根據 I2S 腳位定義連接至 STM32F407。確保電源供應穩定，避免音訊雜訊。
-2.  **STM32 基礎音訊驅動開發**
-    在 STM32CubeIDE 配置 I2S 全雙工模式，並實作 **DMA 雙緩衝 (Ping-Pong Buffer)** 邏輯。首要目標是完成「音訊回放測試」，確保收音與發聲正常。
-3.  **ESP32 通訊橋接實作**
-    撰寫 ESP32 程式，使其建立 Wi-Fi 連線並作為 TCP Client。開發高效的 UART 緩衝機制，將 STM32 的原始音訊流透傳至電腦端。
-4.  **PC 端中繼伺服器開發 (Python)**
-    使用 Python 建立 TCP Server 接收音訊。整合 **NVIDIA NIM (GLM-4.7)** 處理文字對話，並搭配 ASR/TTS 套件完成語音與文字的轉換。
-5.  **系統整合與 UI 調教**
-    進行全鏈路延遲測試，優化 Buffer Size。最後在 STM32 加入 OLED 顯示狀態與實體按鍵控制，完成成品製作。
+## 快速開發流程
 
----
+1. 在 STM32CubeIDE 開啟 `NIM_Assistant_F407/NIM_Assistant_F407.ioc` 或專案資料夾。
+2. 按 `Ctrl+B` 編譯，產生 `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`。
+3. 進入 USB DFU：BOOT0 接 3V3，按 Reset，用 USB 線接板子自己的 USB 孔。
+4. 執行 [NIM_Assistant_F407/flash_usb.bat](NIM_Assistant_F407/flash_usb.bat) 燒錄。
+5. 燒錄完成後 BOOT0 接回 GND，按 Reset，從 USB CDC 或 USB-TTL 觀察 log。
 
-## 開發進度排程 (Project Roadmap)
+## 材料與預算
 
-採用「先軟後硬、分段驗收」策略以降低風險。
-
-### ✅ 已完成
-- Stage 1：GPIO / LED 測試
-- Stage 2：按鍵輸入測試
-- Stage 3：USART1 USB-TTL 測試
-- Stage 4：ESP32 UART PING/PONG 測試
-- Stage 5：MAX98357A I2S 喇叭播放 + 嵌入式 WAV 測試
-- Stage 6：ICS43434 麥克風 I2S 收音測試 ✅ (2026-05-20 解決)
-
-### 🔧 進行中
-- Stage 7：Audio Loopback（麥克風 → 喇叭即時回放）
-
-### 📋 待完成
-- Stage 8：ESP32 音訊串流傳輸
-- Stage 9：全鏈路 ASR → NIM → TTS → 播放
-- Stage 10：OLED 顯示與 UI 調教
-- Stage 11：系統穩定度測試與期末報告
-
----
-
-## 材料與預算清單
-
-| 品名 | 型號/規格 | 預計價格 |
+| 品名 | 型號/規格 | 預估價格 |
 | :--- | :--- | :--- |
-| 主控核心板 | STM32F407VET6 | $748 |
-| Wi-Fi 模組 | ESP32-WROOM-32E (8M) | $306 |
-| 音訊模組包 | ICS43434 (標示 INMP441) + MAX98357A | $376 |
-| 喇叭單體 | 4歐姆 3W 40mm | $165 |
-| 顯示螢幕 | 0.96吋 OLED (7-Pin SPI) | $99 |
+| 主控核心板 | STM32F407VET6 | NT$748 |
+| Wi-Fi 模組 | ESP32-WROOM-32E | NT$306 |
+| 音訊模組 | ICS43434 + MAX98357A | NT$376 |
+| 喇叭 | 4 ohm 3W 40mm | NT$165 |
+| 顯示螢幕 | 0.96 inch OLED, SPI | NT$99 |
 
-**總計預算：約 NT$ 1,694 (不含備品)**
-
----
-
-## 預期成果與測試策略
-
-為降低開發風險並確保專題順利推進，本專案在軟硬體整合前，將採取**「翻譯機模式優先」**的降級測試策略，再逐步推進至**「全功能對話模式」**。
-
-### 📌 測試階段一：中低延遲「隨身翻譯機」模式 (目前可直接用純軟體測試)
-*優點：Prompt 簡單明確、無須維持對話上下文記憶，適合初期驗證通訊與音訊轉換的穩定性。*
-
-*   **功能描述：**使用者按下按鍵說中文，系統純粹負責將其翻譯成日文（或英文），並透過 TTS 播報出來。
-*   **AI Prompt 策略：**`你現在是一個專業的日文翻譯員。無論我說什麼中文，請直接翻譯成具備敬語的自然日文，不要輸出任何解釋字眼。`
-*   **音訊合成方案：**選用 GPT-SoVITS (若本地算力夠強) 或 Edge-TTS 生成高還原度的外語語音。
-
-### 📌 測試階段二：低延遲「智慧語音助理」模式 (終極目標)
-*當「翻譯機模式」在 STM32 上的通訊與播放都穩定後，再切換 Prompt 進入全對話模式。*
-
-*   **流暢對話：**按下按鍵即可與 AI (NVIDIA NIM) 進行語音對話，回應時間挑戰低於 2.5 秒。
-*   **雙語能力：**支援中、日、英等多國語言翻譯與語境分析。
-*   **硬體視覺化：**OLED 螢幕即時顯示音量、連線狀態與對話文字。
-*   
-
-### 原理圖
-
-https://os-mbed-com.translate.goog/users/hudakz/code/STM32F407VET6_Hello/wiki/Homepage?_x_tr_sl=en&_x_tr_tl=zh&_x_tr_hl=zh&_x_tr_pto=sge
+預估總計：約 NT$1,694，不含備品。

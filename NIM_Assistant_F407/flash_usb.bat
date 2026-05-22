@@ -8,6 +8,10 @@ set "PROGRAMMER=C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgramme
 set "ELF_FILE="
 
 if not exist "%PROGRAMMER%" (
+    set "PROGRAMMER=D:\STM32cubeIDE\STM32CubeIDE_1.18.0\STM32CubeIDE\plugins\com.st.stm32cube.ide.mcu.externaltools.cubeprogrammer.win32_2.2.100.202412061334\tools\bin\STM32_Programmer_CLI.exe"
+)
+
+if not exist "%PROGRAMMER%" (
     echo [ERROR] STM32CubeProgrammer not found!
     echo.
     pause

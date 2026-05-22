@@ -216,7 +216,7 @@
             graph TD
             %% 定義硬體終端
             subgraph Edge_Terminal [STM32 硬體感知層]
-                MIC[INMP441 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
+                MIC[ICS43434 MIC] -->|I2S| DMA_RX[DMA 接收緩衝]
                 DMA_RX -->|雙緩衝| MCU_CORE[STM32 邏輯中心]
                 MCU_CORE -->|SPI| OLED[OLED 顯示]
                 MCU_CORE -->|GPIO| BTN[實體按鍵]
@@ -284,7 +284,7 @@
                 <span class="tag">Audio I/O</span>
                 <h4>Peripherals (Mic / Amp)</h4>
                 <ul>
-                    <li><strong>INMP441：</strong>提供低底噪、全向性的數位聲音輸入。</li>
+                    <li><strong>ICS43434：</strong>提供 I2S 數位聲音輸入，實測 SELECT=GND 時資料位於右聲道。</li>
                     <li><strong>MAX98357A：</strong>高效率 Class D 功率放大，直接驅動喇叭。</li>
                 </ul>
             </div>
@@ -295,57 +295,54 @@
         <h2>製作流程 (Production Workflow)</h2>
         <div class="step-list">
             <div class="step-item" data-step="1">
-                <strong>硬體電路組建與焊接</strong>
-                <p>將 INMP441 麥克風與 MAX98357A 擴大機模組銲接排針，並根據 I2S 腳位定義連接至 STM32F407。確保電源供應穩定，避免音訊雜訊。</p>
+                <strong>STM32 基礎驗證</strong>
+                <p>先完成 GPIO、按鍵、USART1 與 USB CDC log，確保板子、線路與基本除錯通道可靠。</p>
             </div>
             <div class="step-item" data-step="2">
-                <strong>STM32 基礎音訊驅動開發</strong>
-                <p>在 STM32CubeIDE 配置 I2S 全雙工模式，並實作 <strong>DMA 雙緩衝 (Ping-Pong Buffer)</strong> 邏輯。首要目標是完成「音訊回放測試」，確保收音與發聲正常。</p>
+                <strong>I2S 音訊輸出與輸入</strong>
+                <p>先驗證 MAX98357A 播放，再驗證 ICS43434 收音。STM32 I2S master TX 必須持續餵資料，才能維持 BCLK/WS。</p>
             </div>
             <div class="step-item" data-step="3">
-                <strong>ESP32 通訊橋接實作</strong>
-                <p>撰寫 ESP32 程式，使其建立 Wi-Fi 連線並作為 TCP Client。開發高效的 UART 緩衝機制，將 STM32 的原始音訊流透傳至電腦端。</p>
+                <strong>Audio Loopback</strong>
+                <p>目前 Stage 7 先用 polling loopback 驗證「麥克風輸入會即時影響喇叭輸出」，通過後再改成 DMA circular buffer。</p>
             </div>
             <div class="step-item" data-step="4">
-                <strong>PC 端中繼伺服器開發 (Python)</strong>
-                <p>使用 Python 建立 TCP Server 接收音訊。整合 <strong>NVIDIA NIM (Gemma 4)</strong> 處理文字對話，並搭配 ASR/TTS 套件完成語音與文字的轉換。</p>
+                <strong>ESP32 音訊橋接</strong>
+                <p>定義 STM32 到 ESP32 的 raw PCM packet 格式，再由 ESP32 透過 Wi-Fi TCP 轉送到 PC。</p>
             </div>
             <div class="step-item" data-step="5">
-                <strong>系統整合與 UI 調教</strong>
-                <p>進行全鏈路延遲測試，優化 Buffer Size。最後在 STM32 加入 OLED 顯示狀態與實體按鍵控制，完成成品製作。</p>
+                <strong>PC AI Pipeline 與 UI</strong>
+                <p>PC 端串接 ASR、NVIDIA NIM 與 TTS，最後補上 OLED 狀態顯示與整體延遲調教。</p>
             </div>
         </div>
     </div>
 
     <div class="card">
         <h2>開發進度排程 (Project Roadmap)</h2>
-        <p>距離 6 月底完工約有 9 週時間，目前處於材料採購階段。採用「先軟後硬、分段驗收」策略以降低風險。</p>
+        <p>目前 Stage 1-6 已完成，Stage 7 正在驗證 audio loopback。後續重點是 DMA 化、ESP32 音訊串流與 PC 端 ASR/NIM/TTS 串接。</p>
         <div class="mermaid">
             gantt
-                title 專題開發里程碑 (4月下旬 ~ 6月底)
+                title 專題開發里程碑
                 dateFormat  MM-DD
                 axisFormat  %m/%d
                 
-                section 階段一：備料與軟體
-                材料採購與等待到貨     :active, a1, 04-21, 7d
-                PC Python 伺服器與 NIM API 測試 :a2, 04-21, 10d
+                section 已完成
+                GPIO / Button / USART1      :done, a1, 05-01, 5d
+                ESP32 UART PING/PONG        :done, a2, after a1, 3d
+                MAX98357A 播放測試          :done, a3, after a2, 4d
+                ICS43434 收音測試           :done, a4, after a3, 5d
                 
-                section 階段二：底層硬體 (大魔王)
-                STM32 環境建置與 LED/UART 測試 :b1, after a1, 5d
-                I2S 麥克風與擴大機接線   :b2, after b1, 3d
-                DMA 雙緩衝實作與音訊 Loopback :crit, b3, after b2, 10d
+                section 進行中
+                Polling Audio Loopback      :active, b1, after a4, 4d
+                DMA Circular Buffer         :crit, b2, after b1, 6d
                 
-                section 階段三：通訊中繼
-                ESP32 UART 轉 TCP 韌體開發 :c1, after b3, 7d
-                STM32 串接 ESP32 封包除錯  :c2, after c1, 7d
+                section 待完成
+                ESP32 Audio Streaming       :c1, after b2, 6d
+                PC ASR / NIM / TTS Pipeline :c2, after c1, 7d
+                OLED Status UI              :c3, after c2, 4d
                 
-                section 階段四：全鏈路整合
-                全系統音訊與推論串流測試   :d1, after c2, 10d
-                OLED SPI 介面與按鍵中斷實作 :d2, after d1, 7d
-                
-                section 階段五：收尾
-                系統穩定度測試與 Bug 修正 :e1, after d2, 7d
-                期末報告與簡報製作        :e2, after d2, 7d
+                section 收尾
+                穩定度測試與報告            :d1, after c3, 7d
         </div>
     </div>
 
@@ -362,7 +359,7 @@
             <tbody>
                 <tr><td>主控核心板</td><td>STM32F407VET6</td><td>$748</td></tr>
                 <tr><td>Wi-Fi 模組</td><td>ESP32-WROOM-32E (8M)</td><td>$306</td></tr>
-                <tr><td>音訊模組包</td><td>INMP441 + MAX98357A</td><td>$376</td></tr>
+                <tr><td>音訊模組包</td><td>ICS43434 + MAX98357A</td><td>$376</td></tr>
                 <tr><td>喇叭單體</td><td>4歐姆 3W 40mm</td><td>$165</td></tr>
                 <tr><td>顯示螢幕</td><td>0.96吋 OLED (7-Pin SPI)</td><td>$99</td></tr>
             </tbody>
