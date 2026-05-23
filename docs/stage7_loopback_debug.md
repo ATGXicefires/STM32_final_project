@@ -1,11 +1,11 @@
 # Stage 7 Audio Loopback Debug Record
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 ## Current Status
 
 - K0 playback works.
-  - `audio_test/test.wav` was converted into `Core/Inc/audio_clip.h`.
+  - `audio_test/BA_V_Koharu_Login_1.ogg` was decoded into `audio_test/test.wav`, then converted into `Core/Inc/audio_clip.h`.
   - Pressing K0 prints `K0 pressed: Audio clip playback`.
   - MAX98357A and speaker can play the embedded clip normally.
 - K1 record-then-playback **works with recognizable speech**.
@@ -15,12 +15,17 @@ Last updated: 2026-05-22
   - Background noise is still present but speech/knocking is clearly recognizable.
   - A `RECORD_TEST_TONE` switch confirms the playback path works (400Hz triangle wave plays cleanly).
 - Live speaker loopback remains disabled (`LOOPBACK_SPEAKER_ENABLE 0U`).
+- Current firmware has been moved from manual I2S polling to I2S2 full-duplex DMA circular buffers.
+  - RX: `I2S2_EXT_RX` on `DMA1_Stream3`, channel 3, circular halfword buffer.
+  - TX: `SPI2_TX` on `DMA1_Stream4`, channel 0, circular halfword buffer.
+  - The DMA buffer is 512 halfwords, or 128 stereo frames at 24-bit I2S format.
+  - HAL's 24-bit I2S DMA API doubles its `Size` internally, so firmware passes `256` to cover the 512-halfword buffer exactly.
 - Current record/playback constants in `Core/Src/main.c`:
   - `RECORD_SAMPLE_COUNT 8000U` (0.5 seconds at 16 kHz)
   - `RECORD_GAIN 12`
   - `MIC_INVALID_MAGNITUDE 500000U`
   - `RECORD_NOISE_GATE 80`
-- Polling diagnostics still show small OVR counts, usually around `ovr:1-3`.
+- Hardware validation is still pending after the DMA change. The target is `ovr:0` during K1 recording.
 
 ## Hardware State
 
@@ -184,7 +189,7 @@ Goal: verify MAX98357A and speaker before debugging microphone loopback.
 
 Changes:
 
-- Converted `audio_test/test.wav` to `Core/Inc/audio_clip.h`.
+- Converted the decoded Koharu login `audio_test/test.wav` to `Core/Inc/audio_clip.h`.
 - Added K0-triggered playback.
 - Fixed I2S 24-bit stereo output so one mono sample is sent to both left and right channels before advancing the sample index.
 
@@ -396,13 +401,13 @@ Remaining noise sources:
 
 Adjust `MIC_INVALID_MAGNITUDE`, `RECORD_GAIN`, `RECORD_NOISE_GATE`, and LPF alpha to find the best signal-to-noise ratio.
 
-### Step 2: DMA Circular Buffer
+### Step 2: Validate DMA Circular Buffer
 
-Replace polling with I2S DMA circular buffers.
+The firmware now uses I2S DMA circular buffers. Validate this on hardware before moving to Stage 8.
 
 Goal:
 
-- Remove polling OVR completely.
+- Confirm `ovr:0` during repeated K1 recordings.
 - Stabilize audio timing.
 - Make later ESP32 streaming practical.
 
@@ -419,4 +424,4 @@ Goal:
 
 ## Current Conclusion
 
-Stage 7 record-then-playback is working. K0 proves output path is clean. K1 recording with IIR LPF, noise gate, and invalid sample decay produces recognizable speech playback. Background noise remains and should be addressed by switching to I2S DMA and further parameter tuning.
+Stage 7 record-then-playback is working at the firmware-build level and has moved to I2S DMA for the next hardware test. K0 proves the output path is clean. The next acceptance check is repeated K1 recording with `ovr:0` and no pure-noise captures.

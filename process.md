@@ -39,7 +39,7 @@
 ### Current
 
 - Stage 7: Audio loopback
-  - K0 plays the embedded `audio_clip` generated from `audio_test/test.wav`.
+  - K0 plays the embedded Koharu login `audio_clip` generated from `audio_test/test.wav` after decoding `audio_test/BA_V_Koharu_Login_1.ogg`.
   - K1 records 0.5 seconds of microphone audio into RAM, then plays the captured buffer through MAX98357A. **語音已可辨識。**
   - 錄音信號處理：DC removal → invalid rejection (`MIC_INVALID_MAGNITUDE 500000`) → IIR LPF (alpha≈1/8) → noise gate (`RECORD_NOISE_GATE 80`) → gain (`RECORD_GAIN 12`)。
   - Invalid samples 使用 filter decay 而非硬切 0。
@@ -47,7 +47,7 @@
   - 錄音完成時輸出 `inv`、left/right avg/peak、`ovr` 診斷與前 16 筆 PCM dump。
   - `LOOPBACK_SPEAKER_ENABLE 0U`，不把 MIC 即時送到 MAX98357A。
   - `RECORD_TEST_TONE` 可切換為 400Hz 三角波測試。
-  - 雜訊仍存在，後續需 DMA 與參數微調。
+  - 雜訊仍存在；firmware 已切到 DMA，後續需硬體驗證 `ovr:0` 與參數微調。
 
 ### Remaining
 

@@ -5,7 +5,7 @@
 ## 目前狀態
 
 - Stage 1-6 已完成：GPIO、按鍵、USART1、ESP32 PING/PONG、MAX98357A 播放、ICS43434 I2S 收音。
-- Stage 7 進行中：K0 播放 `audio_test/test.wav` 測試音效正常；K1 record-then-playback **已可辨識語音**（錄 0.5 秒後播放）。
+- Stage 7 進行中：K0 播放 Koharu login 測試語音（由 `audio_test/BA_V_Koharu_Login_1.ogg` 解碼到 `audio_test/test.wav` 後嵌入）正常；K1 record-then-playback **已可辨識語音**（錄 0.5 秒後播放）。
 - 錄音路徑含 IIR low-pass filter（alpha≈1/8）、noise gate（±80）、DC removal 與 invalid sample decay。
 - 目前麥克風有效資料在 left channel；雜訊仍存在但語音可辨識，後續需改 I2S DMA 進一步改善。
 

@@ -1,6 +1,6 @@
 # STM32 Final Project Progress
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
@@ -30,7 +30,7 @@ Last updated: 2026-05-22
 - 錄音信號處理鏈：DC removal → invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）→ gain（`RECORD_GAIN 12`）。
 - Invalid sample 使用 filter decay 而非硬切 0，避免突然靜音造成 pop。
 - I2S2 master TX 會持續餵 `SPI_DR`，維持 BCLK/WS，避免麥克風失去 clock。
-- K0 播放 `audio_test/test.wav` 轉出的 `audio_clip`，用來驗證 MAX98357A 與喇叭輸出路徑。
+- K0 播放 Koharu login 測試語音：`audio_test/BA_V_Koharu_Login_1.ogg` 已解碼成 `audio_test/test.wav`，再轉成內建 `audio_clip`，用來驗證 MAX98357A 與喇叭輸出路徑。
 - 麥克風目前主要在 left channel 有有效資料。
 - 錄完時 USB CDC 會輸出 `Mic record done: playback start inv ... Lavg ... Lpk ... Ravg ... Rpk ... ovr ...` 與前 16 筆 PCM 值的 dump。
 - live speaker loopback 已關閉：`LOOPBACK_SPEAKER_ENABLE 0U`，避免尖叫、爆音與聲學回授。
@@ -63,11 +63,11 @@ Last updated: 2026-05-22
 
 ## Current Checkpoint
 
-Stage 7 record-then-playback 已可辨識語音。K0 證明輸出路徑正常；K1 錄音經過 LPF、noise gate 與 invalid decay 處理後，回放可聽出人聲與環境音，但仍有背景雜訊。polling 路徑偶有 `ovr`，後續應改 I2S DMA circular buffer 進一步降低雜訊。
+Stage 7 record-then-playback 已可辨識語音。K0 證明輸出路徑正常；K1 錄音經過 LPF、noise gate 與 invalid decay 處理後，回放可聽出人聲與環境音，但仍有背景雜訊。firmware 已切到 I2S2 full-duplex DMA circular buffer，下一步是在硬體上確認 K1 重複錄音時 `ovr:0` 且不再出現整段純雜訊。
 
 ## Next Work
 
 1. 微調錄音參數（LPF alpha、noise gate threshold、invalid magnitude）以改善信噪比。
-2. 將 I2S RX/TX 改成 DMA circular buffer，消除 polling OVR。
+2. 實測 I2S RX/TX DMA circular buffer，確認 `ovr:0`、K0 播放正常、K1 錄音不再隨機變純雜訊。
 3. 等 MIC 資料穩定後，定義 STM32 → ESP32 的 raw PCM packet 格式。
 4. 實作 PC TCP server，準備 ASR/NIM/TTS 全鏈路測試。
