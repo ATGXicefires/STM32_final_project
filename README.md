@@ -4,10 +4,13 @@
 
 ## 目前狀態
 
-- Stage 1-6 已完成：GPIO、按鍵、USART1、ESP32 PING/PONG、MAX98357A 播放、ICS43434 I2S 收音。
-- Stage 7 進行中：K0 播放 Koharu login 測試語音（由 `audio_test/BA_V_Koharu_Login_1.ogg` 解碼到 `audio_test/test.wav` 後嵌入）正常；K1 record-then-playback **已可辨識語音**（錄 0.5 秒後播放）。
-- 錄音路徑含 IIR low-pass filter（alpha≈1/8）、noise gate（±80）、DC removal 與 invalid sample decay。
-- 目前麥克風有效資料在 left channel；雜訊仍存在但語音可辨識，後續需改 I2S DMA 進一步改善。
+- Stage 1-7 已完成：GPIO、按鍵、USART1、ESP32 PING/PONG、MAX98357A 播放、ICS43434 I2S 收音、audio capture/playback validation。
+- Stage 8 目前已打通雙向音訊資料路徑：K1 錄音會以 `PCM1` 封包走 STM32 -> ESP32 -> PC；PC 也可用 `AUD1` 固定長度封包走 PC -> ESP32 -> STM32 -> MAX98357A 播放長音樂片段。
+- Stage 8 目前是 functional/stabilizing：長音樂可正常播放，USART1/Serial2 已升到 `921600`，STM32 使用 USART1 RX DMA circular buffer 與 64 KB playback ring buffer；偶發爆音仍需用 `AUD level`、`underrun`、`overflow` log 追蹤。
+- Stage 7 結果：K0 播放 Koharu login 測試語音（由 `audio_test/BA_V_Koharu_Login_1.ogg` 解碼到 `audio_test/test.wav` 後嵌入）正常；K1 會先錄 0.5 秒麥克風資料，再回放，語音已可辨識。
+- 錄音路徑含 I2S DMA、IIR low-pass filter（alpha≈1/8）、noise gate（±80）、DC removal 與 invalid sample decay；OVR 已降到不再阻塞下一階段。
+- 目前麥克風有效資料在 left channel；live mic-to-speaker loopback 非必要產品功能，維持關閉作為安全設定。
+- 下一步是 Stage 8 穩定化：持續測長音樂、確認偶發爆音是否對應 underrun/overflow，再進 Stage 9 的 ASR/NIM/TTS。
 
 詳細進度請看 [progress.md](progress.md)，開發與燒錄流程請看 [process.md](process.md)。
 
@@ -48,7 +51,8 @@ graph TD
 - [progress.md](progress.md)：目前完成度、當前 firmware 行為、下一步。
 - [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)：USB DFU 燒錄與 SWD 問題整理。
 - [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md)：Stage 6 麥克風排查紀錄。
-- [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)：Stage 7 loopback、K0/K1 測試、接線與 OVR 診斷紀錄。
+- [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)：Stage 7 capture/playback、K0/K1 測試、接線與 OVR 診斷紀錄。
+- [docs/stage8_audio_streaming.md](docs/stage8_audio_streaming.md)：Stage 8 PCM1/AUD1、ESP32 TCP bridge、長音樂播放與穩定化紀錄。
 - [NIM_Assistant_F407/Core/Src/main.c](NIM_Assistant_F407/Core/Src/main.c)：STM32 firmware 主程式。
 - [ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino](ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino)：ESP32 UART bridge 測試程式。
 

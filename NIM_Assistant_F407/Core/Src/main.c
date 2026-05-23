@@ -47,6 +47,20 @@
 #define RECORD_GAIN 12
 #define RECORD_NOISE_GATE 80
 #define RECORD_TEST_TONE 0U  /* 1=fill with test tone, 0=record from mic */
+#define PCM_SAMPLE_RATE 16000U
+#define PCM_PACKET_MAGIC "PCM1"
+#define PCM_PACKET_HEADER_BYTES 24U
+#define PCM_PACKET_PAYLOAD_BYTES (RECORD_SAMPLE_COUNT * sizeof(int16_t))
+#define PCM_UART_CHUNK_BYTES 256U
+#define UART_BRIDGE_BAUD_RATE 921600U
+#define ESP32_PERIODIC_PING_ENABLE 0U
+#define AUD_PACKET_MAGIC "AUD1"
+#define AUD_PACKET_HEADER_BYTES 24U
+#define AUD_SAMPLE_RATE 16000U
+#define AUD_BYTES_PER_SAMPLE 2U
+#define AUD_RING_BUFFER_BYTES 65536U
+#define AUD_PREBUFFER_BYTES 8192U
+#define UART_RX_DMA_BUFFER_BYTES 1024U
 #define DMA_AUDIO_BUFFER_HALFWORDS 512U
 #define DMA_AUDIO_HALF_BUFFER_HALFWORDS (DMA_AUDIO_BUFFER_HALFWORDS / 2U)
 #define DMA_AUDIO_FRAME_HALFWORDS 4U
@@ -64,6 +78,7 @@ UART_HandleTypeDef huart1;
 I2S_HandleTypeDef hi2s2;
 DMA_HandleTypeDef hdma_i2s2_ext_rx;
 DMA_HandleTypeDef hdma_spi2_tx;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
 static volatile uint8_t i2s2_ready = 0;
@@ -93,12 +108,42 @@ static volatile uint32_t dma_channel_valid[2] = {0U, 0U};
 static volatile uint32_t dma_raw_peak[2] = {0U, 0U};
 static volatile uint32_t dma_output_peak = 0;
 static volatile uint32_t dma_frame_count = 0;
+static volatile uint8_t pcm_tx_pending = 0;
+static uint8_t pcm_tx_active = 0;
+static uint8_t pcm_tx_header_sent = 0;
+static uint32_t pcm_tx_seq = 0;
+static uint32_t pcm_tx_offset = 0;
+static uint32_t pcm_tx_checksum = 0;
+static volatile uint8_t uart_rx_dma_ready = 0;
+static volatile uint8_t aud_rx_active = 0;
+static volatile uint8_t aud_playing = 0;
+static volatile uint8_t aud_done_pending = 0;
+static volatile uint8_t aud_result_pending = 0;
+static volatile uint8_t aud_result_ok = 0;
+static volatile uint32_t aud_seq = 0;
+static volatile uint32_t aud_sample_rate = 0;
+static volatile uint32_t aud_sample_count = 0;
+static volatile uint32_t aud_payload_bytes = 0;
+static volatile uint32_t aud_payload_received = 0;
+static volatile uint32_t aud_expected_checksum = 0;
+static volatile uint32_t aud_actual_checksum = 0;
+static volatile uint32_t aud_underrun_count = 0;
+static volatile uint32_t aud_overflow_count = 0;
+static volatile uint32_t aud_ring_head = 0;
+static volatile uint32_t aud_ring_tail = 0;
+static volatile uint32_t aud_ring_count = 0;
+static uint32_t uart_rx_dma_read_index = 0;
+static uint8_t aud_payload_byte_phase = 0U;
+static uint8_t aud_payload_pending_lo = 0U;
+static int16_t aud_last_sample = 0;
 static int32_t record_dc_estimate = 0;
 static int32_t record_lpf = 0;
 static int32_t loopback_dc_estimate = 0;
 static int32_t loopback_output_filter = 0;
 static int16_t loopback_output_sample = 0;
 static int16_t record_buffer[RECORD_SAMPLE_COUNT];
+static uint8_t aud_ring_buffer[AUD_RING_BUFFER_BYTES];
+static uint8_t uart_rx_dma_buffer[UART_RX_DMA_BUFFER_BYTES];
 static uint16_t dma_rx_buffer[DMA_AUDIO_BUFFER_HALFWORDS];
 static uint16_t dma_tx_buffer[DMA_AUDIO_BUFFER_HALFWORDS];
 
@@ -123,6 +168,22 @@ static void Test_StartAudioDma(void);
 static void Test_ServiceAudioDma(uint8_t mic_diagnostic_enabled, uint32_t *last_report_tick);
 static void Test_ProcessAudioDmaBlock(uint32_t offset, uint32_t length);
 static int16_t Test_GetNextDmaOutputSample(void);
+static uint32_t Test_ComputePcmChecksum(void);
+static void Test_WriteLe32(uint8_t *buffer, uint32_t offset, uint32_t value);
+static uint32_t Test_ReadLe32(const uint8_t *buffer, uint32_t offset);
+static void Test_RequestPcmTransmit(void);
+static uint8_t Test_IsPcmTransmitBusy(void);
+static void Test_ServicePcmTransmit(void);
+static void Test_StartUartRxDma(void);
+static void Test_ProcessUartRxByte(uint8_t rx_byte);
+static void Test_ResetAudStream(void);
+static void Test_StartAudPayload(const uint8_t *header);
+static void Test_ProcessAudPayloadByte(uint8_t rx_byte);
+static uint8_t Test_AudRingWriteSampleBytes(uint8_t lo, uint8_t hi);
+static uint8_t Test_AudRingReadSample(int16_t *sample);
+static int16_t Test_DecaySampleTowardZero(int16_t sample);
+static int16_t Test_GetNextAudSample(void);
+static void Test_ServiceAudStream(uint32_t *last_report_tick);
 
 /* USER CODE END PFP */
 
@@ -145,31 +206,346 @@ static void Test_SendUsbStatus(const char *message) {
 static void Test_SendPingIfDue(uint32_t *last_ping_tick) {
   const char ping[] = "PING\r\n";
 
-  if ((HAL_GetTick() - *last_ping_tick) >= 1000U) {
+  if (ESP32_PERIODIC_PING_ENABLE == 0U) {
+    return;
+  }
+
+  if ((Test_IsPcmTransmitBusy() == 0U) && ((HAL_GetTick() - *last_ping_tick) >= 1000U)) {
     *last_ping_tick = HAL_GetTick();
     HAL_UART_Transmit(&huart1, (uint8_t *)ping, strlen(ping), 10);
   }
 }
 
 static void Test_HandleUartRx(void) {
-  static char line_buffer[16];
-  static uint8_t line_index = 0;
-  uint8_t rx_byte;
+  if ((uart_rx_dma_ready == 0U) || (huart1.hdmarx == NULL)) {
+    return;
+  }
 
-  if (HAL_UART_Receive(&huart1, &rx_byte, 1, 0) == HAL_OK) {
-    if ((rx_byte == '\r') || (rx_byte == '\n')) {
-      if (line_index > 0U) {
-        line_buffer[line_index] = '\0';
-        if (strcmp(line_buffer, "PONG") == 0) {
-          Test_SendStatus("ESP32 PONG OK\r\n");
-        }
-        line_index = 0;
-      }
-    } else if (line_index < (sizeof(line_buffer) - 1U)) {
-      line_buffer[line_index++] = (char)rx_byte;
-    } else {
-      line_index = 0;
+  uint32_t write_index = UART_RX_DMA_BUFFER_BYTES - __HAL_DMA_GET_COUNTER(huart1.hdmarx);
+  if (write_index >= UART_RX_DMA_BUFFER_BYTES) {
+    write_index = 0U;
+  }
+
+  while (uart_rx_dma_read_index != write_index) {
+    uint8_t rx_byte = uart_rx_dma_buffer[uart_rx_dma_read_index];
+    uart_rx_dma_read_index++;
+    if (uart_rx_dma_read_index >= UART_RX_DMA_BUFFER_BYTES) {
+      uart_rx_dma_read_index = 0U;
     }
+    Test_ProcessUartRxByte(rx_byte);
+  }
+}
+
+static void Test_StartUartRxDma(void) {
+  memset(uart_rx_dma_buffer, 0, sizeof(uart_rx_dma_buffer));
+  uart_rx_dma_read_index = 0U;
+  uart_rx_dma_ready = 0U;
+
+  if (HAL_UART_Receive_DMA(&huart1, uart_rx_dma_buffer, UART_RX_DMA_BUFFER_BYTES) == HAL_OK) {
+    uart_rx_dma_ready = 1U;
+    Test_SendUsbStatus("USART1 RX DMA ready at 921600 baud\r\n");
+  } else {
+    Test_SendUsbStatus("USART1 RX DMA failed\r\n");
+  }
+}
+
+static void Test_ProcessUartRxByte(uint8_t rx_byte) {
+  enum {
+    UART_PARSE_LINE = 0,
+    UART_PARSE_AUD_HEADER,
+    UART_PARSE_AUD_PAYLOAD,
+    UART_PARSE_AUD_DROP
+  };
+  static uint8_t parse_mode = UART_PARSE_LINE;
+  static char line_buffer[16];
+  static uint8_t line_index = 0U;
+  static uint8_t aud_magic_index = 0U;
+  static uint8_t aud_header[AUD_PACKET_HEADER_BYTES - 4U];
+  static uint32_t aud_header_index = 0U;
+
+  if (parse_mode == UART_PARSE_AUD_HEADER) {
+    aud_header[aud_header_index++] = rx_byte;
+    if (aud_header_index >= sizeof(aud_header)) {
+      Test_StartAudPayload(aud_header);
+      if (aud_rx_active != 0U) {
+        parse_mode = UART_PARSE_AUD_PAYLOAD;
+      } else if (aud_payload_bytes > 0U) {
+        parse_mode = UART_PARSE_AUD_DROP;
+      } else {
+        parse_mode = UART_PARSE_LINE;
+      }
+      aud_header_index = 0U;
+    }
+    return;
+  }
+
+  if (parse_mode == UART_PARSE_AUD_PAYLOAD) {
+    Test_ProcessAudPayloadByte(rx_byte);
+    if (aud_payload_received >= aud_payload_bytes) {
+      parse_mode = UART_PARSE_LINE;
+      aud_magic_index = 0U;
+      line_index = 0U;
+    }
+    return;
+  }
+
+  if (parse_mode == UART_PARSE_AUD_DROP) {
+    aud_payload_received++;
+    if (aud_payload_received >= aud_payload_bytes) {
+      parse_mode = UART_PARSE_LINE;
+      aud_magic_index = 0U;
+      line_index = 0U;
+    }
+    return;
+  }
+
+  if ((line_index == 0U) || (aud_magic_index > 0U)) {
+    if (rx_byte == (uint8_t)AUD_PACKET_MAGIC[aud_magic_index]) {
+      aud_magic_index++;
+      if (aud_magic_index == 4U) {
+        parse_mode = UART_PARSE_AUD_HEADER;
+        aud_header_index = 0U;
+        line_index = 0U;
+        return;
+      }
+      return;
+    }
+
+    if (aud_magic_index > 0U) {
+      for (uint8_t i = 0U; i < aud_magic_index; i++) {
+        if (line_index < (sizeof(line_buffer) - 1U)) {
+          line_buffer[line_index++] = AUD_PACKET_MAGIC[i];
+        }
+      }
+      aud_magic_index = 0U;
+    }
+  }
+
+  if ((rx_byte == '\r') || (rx_byte == '\n')) {
+    if (line_index > 0U) {
+      line_buffer[line_index] = '\0';
+      if (strcmp(line_buffer, "PONG") == 0) {
+        Test_SendUsbStatus("ESP32 PONG OK\r\n");
+      }
+      line_index = 0U;
+    }
+  } else if (line_index < (sizeof(line_buffer) - 1U)) {
+    line_buffer[line_index++] = (char)rx_byte;
+  } else {
+    line_index = 0U;
+    aud_magic_index = 0U;
+  }
+}
+
+static void Test_ResetAudStream(void) {
+  aud_rx_active = 0U;
+  aud_playing = 0U;
+  aud_done_pending = 0U;
+  aud_result_pending = 0U;
+  aud_result_ok = 0U;
+  aud_seq = 0U;
+  aud_sample_rate = 0U;
+  aud_sample_count = 0U;
+  aud_payload_bytes = 0U;
+  aud_payload_received = 0U;
+  aud_expected_checksum = 0U;
+  aud_actual_checksum = 0U;
+  aud_underrun_count = 0U;
+  aud_overflow_count = 0U;
+  aud_ring_head = 0U;
+  aud_ring_tail = 0U;
+  aud_ring_count = 0U;
+  aud_payload_byte_phase = 0U;
+  aud_payload_pending_lo = 0U;
+  aud_last_sample = 0;
+}
+
+static void Test_StartAudPayload(const uint8_t *header) {
+  char message[128];
+  uint32_t sample_rate = Test_ReadLe32(header, 0U);
+  uint32_t sample_count = Test_ReadLe32(header, 4U);
+  uint32_t payload_bytes = Test_ReadLe32(header, 8U);
+  uint32_t seq = Test_ReadLe32(header, 12U);
+  uint32_t checksum = Test_ReadLe32(header, 16U);
+
+  __disable_irq();
+  Test_ResetAudStream();
+  aud_seq = seq;
+  aud_sample_rate = sample_rate;
+  aud_sample_count = sample_count;
+  aud_payload_bytes = payload_bytes;
+  aud_expected_checksum = checksum;
+  __enable_irq();
+
+  if ((sample_rate != AUD_SAMPLE_RATE) ||
+      (sample_count == 0U) ||
+      (sample_count > (0xFFFFFFFFU / AUD_BYTES_PER_SAMPLE)) ||
+      (payload_bytes == 0U) ||
+      (payload_bytes != (sample_count * AUD_BYTES_PER_SAMPLE))) {
+    snprintf(message, sizeof(message),
+             "AUD RX reject seq:%lu rate:%lu samples:%lu bytes:%lu\r\n",
+             (unsigned long)seq, (unsigned long)sample_rate,
+             (unsigned long)sample_count, (unsigned long)payload_bytes);
+    Test_SendUsbStatus(message);
+    return;
+  }
+
+  __disable_irq();
+  aud_rx_active = 1U;
+  __enable_irq();
+  snprintf(message, sizeof(message),
+           "AUD RX start seq:%lu samples:%lu bytes:%lu checksum:%lu\r\n",
+           (unsigned long)seq, (unsigned long)sample_count,
+           (unsigned long)payload_bytes, (unsigned long)checksum);
+  Test_SendUsbStatus(message);
+}
+
+static void Test_ProcessAudPayloadByte(uint8_t rx_byte) {
+  aud_actual_checksum += rx_byte;
+  aud_payload_received++;
+
+  if (aud_payload_byte_phase == 0U) {
+    aud_payload_pending_lo = rx_byte;
+    aud_payload_byte_phase = 1U;
+  } else {
+    if (Test_AudRingWriteSampleBytes(aud_payload_pending_lo, rx_byte) == 0U) {
+      aud_overflow_count += AUD_BYTES_PER_SAMPLE;
+    }
+    aud_payload_byte_phase = 0U;
+  }
+
+  if ((aud_playing == 0U) &&
+      ((aud_ring_count >= AUD_PREBUFFER_BYTES) ||
+       (aud_payload_received >= aud_payload_bytes))) {
+    aud_playing = 1U;
+  }
+
+  if (aud_payload_received >= aud_payload_bytes) {
+    aud_rx_active = 0U;
+    aud_payload_byte_phase = 0U;
+    aud_result_ok = (aud_actual_checksum == aud_expected_checksum) ? 1U : 0U;
+    aud_result_pending = 1U;
+  }
+}
+
+static uint8_t Test_AudRingWriteSampleBytes(uint8_t lo, uint8_t hi) {
+  uint8_t ok = 0U;
+
+  __disable_irq();
+  if (aud_ring_count <= (AUD_RING_BUFFER_BYTES - AUD_BYTES_PER_SAMPLE)) {
+    aud_ring_buffer[aud_ring_head] = lo;
+    aud_ring_head++;
+    if (aud_ring_head >= AUD_RING_BUFFER_BYTES) {
+      aud_ring_head = 0U;
+    }
+    aud_ring_buffer[aud_ring_head] = hi;
+    aud_ring_head++;
+    if (aud_ring_head >= AUD_RING_BUFFER_BYTES) {
+      aud_ring_head = 0U;
+    }
+    aud_ring_count += AUD_BYTES_PER_SAMPLE;
+    ok = 1U;
+  }
+  __enable_irq();
+
+  return ok;
+}
+
+static uint8_t Test_AudRingReadSample(int16_t *sample) {
+  uint8_t lo;
+  uint8_t hi;
+
+  if (aud_ring_count < AUD_BYTES_PER_SAMPLE) {
+    return 0U;
+  }
+
+  lo = aud_ring_buffer[aud_ring_tail];
+  aud_ring_tail++;
+  if (aud_ring_tail >= AUD_RING_BUFFER_BYTES) {
+    aud_ring_tail = 0U;
+  }
+
+  hi = aud_ring_buffer[aud_ring_tail];
+  aud_ring_tail++;
+  if (aud_ring_tail >= AUD_RING_BUFFER_BYTES) {
+    aud_ring_tail = 0U;
+  }
+
+  aud_ring_count -= AUD_BYTES_PER_SAMPLE;
+  *sample = (int16_t)((uint16_t)lo | ((uint16_t)hi << 8));
+  return 1U;
+}
+
+static int16_t Test_DecaySampleTowardZero(int16_t sample) {
+  int32_t value = sample;
+  int32_t step;
+
+  if (value > 0) {
+    step = (value + 7) / 8;
+    value -= step;
+  } else if (value < 0) {
+    step = ((-value) + 7) / 8;
+    value += step;
+  }
+
+  return (int16_t)value;
+}
+
+static int16_t Test_GetNextAudSample(void) {
+  int16_t sample = 0;
+
+  if (Test_AudRingReadSample(&sample) != 0U) {
+    aud_last_sample = sample;
+    return sample;
+  }
+
+  if ((aud_rx_active != 0U) || (aud_payload_received < aud_payload_bytes)) {
+    aud_underrun_count++;
+  } else {
+    if (aud_last_sample == 0) {
+      aud_playing = 0U;
+      aud_done_pending = 1U;
+    }
+  }
+
+  aud_last_sample = Test_DecaySampleTowardZero(aud_last_sample);
+  return aud_last_sample;
+}
+
+static void Test_ServiceAudStream(uint32_t *last_report_tick) {
+  char message[160];
+
+  if (aud_result_pending != 0U) {
+    aud_result_pending = 0U;
+    snprintf(message, sizeof(message),
+             "AUD RX payload done seq:%lu bytes:%lu checksum:%lu/%lu %s\r\n",
+             (unsigned long)aud_seq, (unsigned long)aud_payload_received,
+             (unsigned long)aud_actual_checksum,
+             (unsigned long)aud_expected_checksum,
+             (aud_result_ok != 0U) ? "OK" : "FAIL");
+    Test_SendUsbStatus(message);
+  }
+
+  if (aud_done_pending != 0U) {
+    aud_done_pending = 0U;
+    snprintf(message, sizeof(message),
+             "AUD playback done seq:%lu underrun:%lu overflow:%lu\r\n",
+             (unsigned long)aud_seq, (unsigned long)aud_underrun_count,
+             (unsigned long)aud_overflow_count);
+    Test_SendUsbStatus(message);
+  }
+
+  if (((aud_rx_active != 0U) || (aud_playing != 0U)) &&
+      ((HAL_GetTick() - *last_report_tick) >= 1000U)) {
+    *last_report_tick = HAL_GetTick();
+    snprintf(message, sizeof(message),
+             "AUD level:%lu rx:%lu/%lu underrun:%lu overflow:%lu\r\n",
+             (unsigned long)aud_ring_count,
+             (unsigned long)aud_payload_received,
+             (unsigned long)aud_payload_bytes,
+             (unsigned long)aud_underrun_count,
+             (unsigned long)aud_overflow_count);
+    Test_SendUsbStatus(message);
   }
 }
 
@@ -180,10 +556,13 @@ static void Test_StartAudioClip(void) {
   }
 
   __disable_irq();
+  Test_ResetAudStream();
   record_active = 0U;
   record_playing = 0U;
   record_done_pending = 0U;
   record_play_done_pending = 0U;
+  pcm_tx_pending = 0U;
+  pcm_tx_active = 0U;
   clip_index = 0U;
   clip_playing = 1U;
   clip_done_pending = 0U;
@@ -198,6 +577,7 @@ static void Test_StartMicRecord(void) {
   }
 
   __disable_irq();
+  Test_ResetAudStream();
   clip_playing = 0U;
   clip_done_pending = 0U;
   record_index = 0U;
@@ -213,6 +593,8 @@ static void Test_StartMicRecord(void) {
   record_lpf = 0;
   record_done_pending = 0U;
   record_play_done_pending = 0U;
+  pcm_tx_pending = 0U;
+  pcm_tx_active = 0U;
   Test_ResetDmaStats();
   __enable_irq();
 
@@ -246,10 +628,13 @@ static void Test_StartMicRecord(void) {
 
 static void Test_CancelMicRecordPlayback(void) {
   __disable_irq();
+  Test_ResetAudStream();
   record_active = 0U;
   record_playing = 0U;
   record_index = 0U;
   record_play_index = 0U;
+  pcm_tx_pending = 0U;
+  pcm_tx_active = 0U;
   __enable_irq();
   Test_SendStatus("K1 pressed: record/playback cancel\r\n");
 }
@@ -303,11 +688,120 @@ static int16_t Test_GetNextDmaOutputSample(void) {
       record_play_index = 0U;
       record_play_done_pending = 1U;
     }
+  } else if (aud_playing != 0U) {
+    tx_sample = Test_GetNextAudSample();
   } else if (LOOPBACK_SPEAKER_ENABLE != 0U) {
     tx_sample = loopback_output_sample;
   }
 
   return tx_sample;
+}
+
+static uint32_t Test_ComputePcmChecksum(void) {
+  const uint8_t *payload = (const uint8_t *)record_buffer;
+  uint32_t checksum = 0U;
+
+  for (uint32_t i = 0U; i < PCM_PACKET_PAYLOAD_BYTES; i++) {
+    checksum += payload[i];
+  }
+
+  return checksum;
+}
+
+static void Test_WriteLe32(uint8_t *buffer, uint32_t offset, uint32_t value) {
+  buffer[offset] = (uint8_t)(value & 0xFFU);
+  buffer[offset + 1U] = (uint8_t)((value >> 8) & 0xFFU);
+  buffer[offset + 2U] = (uint8_t)((value >> 16) & 0xFFU);
+  buffer[offset + 3U] = (uint8_t)((value >> 24) & 0xFFU);
+}
+
+static uint32_t Test_ReadLe32(const uint8_t *buffer, uint32_t offset) {
+  return ((uint32_t)buffer[offset]) |
+         ((uint32_t)buffer[offset + 1U] << 8) |
+         ((uint32_t)buffer[offset + 2U] << 16) |
+         ((uint32_t)buffer[offset + 3U] << 24);
+}
+
+static void Test_RequestPcmTransmit(void) {
+  if (pcm_tx_active != 0U) {
+    return;
+  }
+
+  pcm_tx_checksum = Test_ComputePcmChecksum();
+  pcm_tx_offset = 0U;
+  pcm_tx_header_sent = 0U;
+  pcm_tx_seq++;
+  pcm_tx_pending = 1U;
+}
+
+static uint8_t Test_IsPcmTransmitBusy(void) {
+  return ((pcm_tx_pending != 0U) || (pcm_tx_active != 0U)) ? 1U : 0U;
+}
+
+static void Test_ServicePcmTransmit(void) {
+  char message[96];
+
+  if ((pcm_tx_active == 0U) && (pcm_tx_pending == 0U)) {
+    return;
+  }
+
+  if ((record_active != 0U) || (clip_playing != 0U)) {
+    return;
+  }
+
+  if ((pcm_tx_active == 0U) && (pcm_tx_pending != 0U)) {
+    pcm_tx_active = 1U;
+    pcm_tx_pending = 0U;
+    snprintf(message, sizeof(message),
+             "PCM TX start seq:%lu bytes:%lu checksum:%lu\r\n",
+             (unsigned long)pcm_tx_seq,
+             (unsigned long)PCM_PACKET_PAYLOAD_BYTES,
+             (unsigned long)pcm_tx_checksum);
+    Test_SendUsbStatus(message);
+  }
+
+  if ((pcm_tx_header_sent == 0U) && (pcm_tx_active != 0U)) {
+    uint8_t header[PCM_PACKET_HEADER_BYTES];
+    memcpy(header, PCM_PACKET_MAGIC, 4U);
+    Test_WriteLe32(header, 4U, PCM_SAMPLE_RATE);
+    Test_WriteLe32(header, 8U, RECORD_SAMPLE_COUNT);
+    Test_WriteLe32(header, 12U, PCM_PACKET_PAYLOAD_BYTES);
+    Test_WriteLe32(header, 16U, pcm_tx_seq);
+    Test_WriteLe32(header, 20U, pcm_tx_checksum);
+
+    if (HAL_UART_Transmit(&huart1, header, sizeof(header), 100) != HAL_OK) {
+      Test_SendUsbStatus("PCM TX header failed\r\n");
+      pcm_tx_active = 0U;
+      return;
+    }
+    pcm_tx_header_sent = 1U;
+    return;
+  }
+
+  if (pcm_tx_active != 0U) {
+    uint32_t remaining = PCM_PACKET_PAYLOAD_BYTES - pcm_tx_offset;
+    uint16_t chunk = (remaining > PCM_UART_CHUNK_BYTES) ? PCM_UART_CHUNK_BYTES : (uint16_t)remaining;
+    uint8_t *payload = (uint8_t *)record_buffer;
+
+    if (chunk > 0U) {
+      if (HAL_UART_Transmit(&huart1, &payload[pcm_tx_offset], chunk, 100) != HAL_OK) {
+        Test_SendUsbStatus("PCM TX payload failed\r\n");
+        pcm_tx_active = 0U;
+        return;
+      }
+      pcm_tx_offset += chunk;
+      return;
+    }
+
+    snprintf(message, sizeof(message),
+             "PCM TX done seq:%lu bytes:%lu\r\n",
+             (unsigned long)pcm_tx_seq,
+             (unsigned long)PCM_PACKET_PAYLOAD_BYTES);
+    Test_SendUsbStatus(message);
+    pcm_tx_active = 0U;
+    pcm_tx_header_sent = 0U;
+    pcm_tx_offset = 0U;
+  }
 }
 
 static void Test_ProcessAudioDmaBlock(uint32_t offset, uint32_t length) {
@@ -575,16 +1069,19 @@ int main(void) {
   uint32_t last_blink_tick = HAL_GetTick();
   uint32_t last_ping_tick = HAL_GetTick();
   uint32_t last_loopback_report_tick = HAL_GetTick();
+  uint32_t last_aud_report_tick = HAL_GetTick();
   uint8_t blink_state = 0;
   uint8_t last_button_state = 0xFF;
 
+  Test_StartUartRxDma();
   Test_SendStatus("GPIO/Button test ready\r\n");
   Test_SendStatus("USART1 ESP32 bridge test ready\r\n");
-  Test_SendStatus("ESP32 UART PING/PONG test ready\r\n");
+  Test_SendStatus("ESP32 UART bridge ready; periodic PING disabled\r\n");
   if (i2s2_ready != 0U) {
     Test_SendUsbStatus("I2S2 full-duplex DMA audio ready\r\n");
     Test_SendUsbStatus("Audio clip ready: K0 plays Koharu login clip\r\n");
     Test_SendUsbStatus("Mic record ready: K1 records 0.5s then plays back\r\n");
+    Test_SendUsbStatus("PCM TX ready: K1 sends buffered PCM to ESP32 after recording\r\n");
   } else {
     Test_SendUsbStatus("Mic record disabled: I2S DMA init failed\r\n");
   }
@@ -645,6 +1142,8 @@ int main(void) {
     Test_SendPingIfDue(&last_ping_tick);
     Test_HandleUartRx();
     Test_ServiceAudioDma(record_active, &last_loopback_report_tick);
+    Test_ServicePcmTransmit();
+    Test_ServiceAudStream(&last_aud_report_tick);
 
     /* Print record-done log outside the DMA callback to avoid audio starvation */
     if (record_done_pending != 0U) {
@@ -668,6 +1167,7 @@ int main(void) {
                record_buffer[8], record_buffer[9], record_buffer[10], record_buffer[11],
                record_buffer[12], record_buffer[13], record_buffer[14], record_buffer[15]);
       Test_SendUsbStatus(dump);
+      Test_RequestPcmTransmit();
     }
 
     /* USER CODE END WHILE */
@@ -734,12 +1234,15 @@ static void MX_DMA_Init(void) {
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* DMA interrupt init */
   HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
   HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 1, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
 }
 
 /**
@@ -790,7 +1293,7 @@ static void MX_USART1_UART_Init(void) {
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = UART_BRIDGE_BAUD_RATE;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;

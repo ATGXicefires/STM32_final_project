@@ -1,4 +1,4 @@
-# Stage 7 Audio Loopback Debug Record
+# Stage 7 Audio Capture/Playback Debug Record
 
 Last updated: 2026-05-23
 
@@ -14,18 +14,22 @@ Last updated: 2026-05-23
   - Invalid samples use filter decay instead of hard zero to avoid pops.
   - Background noise is still present but speech/knocking is clearly recognizable.
   - A `RECORD_TEST_TONE` switch confirms the playback path works (400Hz triangle wave plays cleanly).
-- Live speaker loopback remains disabled (`LOOPBACK_SPEAKER_ENABLE 0U`).
+- Live speaker loopback remains disabled (`LOOPBACK_SPEAKER_ENABLE 0U`) intentionally.
+  - The final assistant pipeline does not require real-time mic-to-speaker loopback.
+  - Live loopback remains diagnostic/deferred because it can cause feedback, burst noise, and unnecessary safety risk.
 - Current firmware has been moved from manual I2S polling to I2S2 full-duplex DMA circular buffers.
   - RX: `I2S2_EXT_RX` on `DMA1_Stream3`, channel 3, circular halfword buffer.
   - TX: `SPI2_TX` on `DMA1_Stream4`, channel 0, circular halfword buffer.
   - The DMA buffer is 512 halfwords, or 128 stereo frames at 24-bit I2S format.
   - HAL's 24-bit I2S DMA API doubles its `Size` internally, so firmware passes `256` to cover the 512-halfword buffer exactly.
+- DMA hardware validation has been completed enough to move on.
+  - Repeated K1 record/playback no longer has OVR as the blocking issue.
+  - The accepted Stage 7 behavior is buffered capture first, playback after the 0.5 second buffer fills.
 - Current record/playback constants in `Core/Src/main.c`:
   - `RECORD_SAMPLE_COUNT 8000U` (0.5 seconds at 16 kHz)
   - `RECORD_GAIN 12`
   - `MIC_INVALID_MAGNITUDE 500000U`
   - `RECORD_NOISE_GATE 80`
-- Hardware validation is still pending after the DMA change. The target is `ovr:0` during K1 recording.
 
 ## Hardware State
 
@@ -43,7 +47,7 @@ Last updated: 2026-05-23
   - MIC VDD is still expected to be stable 3.3V.
   - MIC, STM32, and MAX98357A must share GND.
   - Add a local `0.1uF` capacitor from MIC VDD to GND if not already present.
-  - A `100kΩ` pull-down from MIC `SD/DOUT` to GND has been tested. It did not fully remove occasional full-scale spikes, so OVR/frame handling remains part of the issue.
+  - A `100kΩ` pull-down from MIC `SD/DOUT` to GND has been tested. It remains useful for inactive-channel stability even though DMA/OVR is no longer the main blocker.
 
 ## Wiring Table
 
@@ -138,7 +142,7 @@ The current diagnostic firmware also includes software fixes from the 2026-05-22
   - Target-channel output handling is now one block.
   - `dc_estimate` is a single target-channel state instead of a two-element array.
   - `dc_estimate` and `output_filter` reset when loopback is off or OVR is cleared.
-- I2S2ext OVR is checked and cleared inside `Test_ServiceAudioLoopback`.
+- I2S2ext OVR is checked and cleared inside the audio service path.
   - On OVR, firmware reads/clears the extension data/status registers through `__HAL_I2SEXT_CLEAR_OVRFLAG`.
   - The high/low word state machine is reset for both channels after OVR.
 - RX status is read once per RX event.
@@ -158,7 +162,7 @@ Mic record done: playback start inv:<...> Lavg:<...> Lpk:<...> Ravg:<...> Rpk:<.
 
 Interpretation:
 
-- `ovr:0` is required before trusting loopback quality.
+- `ovr` is a diagnostic field for confirming the DMA path remains healthy.
 - `inv` should be low; a high value means full-scale invalid samples are still being muted.
 - Live speaker output is still disabled by `LOOPBACK_SPEAKER_ENABLE 0U`.
 - The old disabled `#if 0` one-shot mic monitor was removed from `main.c` to avoid stale right-channel comments.
@@ -180,7 +184,7 @@ Interpretation:
 Notes:
 
 - `MIC_LOOPBACK_CHANNEL 0U` matches the observed left-channel microphone response.
-- `MIC_INVALID_MAGNITUDE 4500000U` rejects the large false peaks that previously reached `8388608`.
+- `MIC_INVALID_MAGNITUDE 500000U` rejects the large false peaks that previously reached `8388608`.
 - Speaker output remains disabled even though gain/output constants are present.
 
 ### 1. K0 Audio Clip Playback
@@ -270,7 +274,7 @@ Change:
 - Added a threshold:
   - Initially `MIC_INVALID_MAGNITUDE 7000000U`
   - Later tightened to `MIC_INVALID_MAGNITUDE 5000000U`
-  - Current record/playback firmware uses `MIC_INVALID_MAGNITUDE 4500000U`
+  - Current record/playback firmware uses `MIC_INVALID_MAGNITUDE 500000U`
 - Samples above this magnitude are ignored for output.
 
 Result:
@@ -382,36 +386,34 @@ Conclusion:
 
 - Power may still affect noise, but the main remaining issue is likely microphone SD/channel/data validity.
 
-## Current Working Theory
+## Final Stage 7 Working Theory
 
 The output path is functional (K0 proves it, test tone confirms record_buffer playback path).
 
-The microphone I2S data contains frequent noise spikes mixed with valid audio. The polling RX path has occasional overruns. The signal processing chain (DC removal + invalid rejection + IIR LPF + noise gate) is sufficient to produce recognizable speech in record-then-playback mode, but background noise remains.
+The microphone I2S data can still contain noise spikes mixed with valid audio, but the DMA capture path and record-then-playback behavior are good enough for the next project stage. The signal processing chain (DC removal + invalid rejection + IIR LPF + noise gate) is sufficient to produce recognizable speech in buffered record-then-playback mode.
 
-Remaining noise sources:
+Remaining quality limits:
 
-1. Polling RX still occasionally overruns (`ovr:1-3`), causing stale or misaligned audio words.
-2. Breadboard wiring and power supply noise affecting the analog mic signal.
-3. MIC power decoupling may still be insufficient.
-4. The IIR LPF attenuates high-frequency speech content along with noise.
+1. Breadboard wiring and power supply noise may still affect the mic signal.
+2. MIC power decoupling may still be insufficient.
+3. The IIR LPF attenuates high-frequency speech content along with noise.
+4. Live speaker loopback remains unsafe/unnecessary compared with buffered capture/playback.
 
-## Recommended Next Steps
+## Stage 8 Handoff
 
-### Step 1: Parameter Tuning
+Stage 7 is complete for the project goal. The active work has moved to [stage8_audio_streaming.md](stage8_audio_streaming.md).
 
-Adjust `MIC_INVALID_MAGNITUDE`, `RECORD_GAIN`, `RECORD_NOISE_GATE`, and LPF alpha to find the best signal-to-noise ratio.
+Current Stage 8 result:
 
-### Step 2: Validate DMA Circular Buffer
+- `PCM1` sends the existing 0.5 second `record_buffer` from STM32 to ESP32, then onward to PC.
+- `AUD1` sends fixed-length 16 kHz mono signed 16-bit PCM from PC to ESP32, then to STM32 for MAX98357A playback.
+- Long music playback is functional, with rare pop/noise events still under stability testing.
 
-The firmware now uses I2S DMA circular buffers. Validate this on hardware before moving to Stage 8.
+## Optional Audio Quality Tuning
 
-Goal:
+Adjust `MIC_INVALID_MAGNITUDE`, `RECORD_GAIN`, `RECORD_NOISE_GATE`, and LPF alpha only if the transferred audio quality is not good enough for ASR testing.
 
-- Confirm `ovr:0` during repeated K1 recordings.
-- Stabilize audio timing.
-- Make later ESP32 streaming practical.
-
-### Step 3: Hardware Improvements
+## Hardware Improvements As Needed
 
 - Ensure `0.1uF` decoupling capacitor close to MIC VDD.
 - Keep `100kΩ` pull-down on MIC SD/DOUT.
@@ -419,9 +421,10 @@ Goal:
 
 ## Do Not Do Yet
 
-- Do not enable live speaker loopback as the main test path.
+- Do not enable live speaker loopback as the main test path; it is not required for the final assistant pipeline.
 - Do not assume MAX98357A is broken while K0 playback works.
+- Do not start ASR/NIM/TTS integration until Stage 8 long-play stability is acceptable.
 
 ## Current Conclusion
 
-Stage 7 record-then-playback is working at the firmware-build level and has moved to I2S DMA for the next hardware test. K0 proves the output path is clean. The next acceptance check is repeated K1 recording with `ovr:0` and no pure-noise captures.
+Stage 7 audio capture/playback validation is complete for the project goal. K0 proves the output path, and K1 proves buffered microphone capture followed by playback. Stage 8 now owns UART/TCP audio transfer and playback stability.

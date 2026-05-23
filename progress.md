@@ -14,8 +14,8 @@ Last updated: 2026-05-23
 | 4. ESP32 UART PING/PONG | Done | STM32 sends `PING`，ESP32 replies `PONG` |
 | 5. MAX98357A I2S playback | Done | I2S2 TX 播放 beep 與 embedded WAV clip 通過 |
 | 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
-| 7. Audio loopback | In progress | K0 播放通過；K1 record-then-playback 已可辨識語音，含 IIR LPF + noise gate；live loopback 暫停 |
-| 8. ESP32 audio streaming | Todo | 定義 UART audio packet，轉 TCP 到 PC |
+| 7. Audio capture/playback validation | Done | K0 播放通過；K1 先錄 0.5 秒再回放，語音可辨識；I2S DMA 已驗證，OVR 不再是 Stage 8 blocker；live loopback 非必要並維持關閉 |
+| 8. ESP32 audio streaming | Current / Stabilizing | `PCM1` 錄音回 PC 已實作；`AUD1` PC -> ESP32 -> STM32 長音樂播放可用，偶發爆音仍需追 underrun/overflow 或硬體雜訊 |
 | 9. ASR -> NIM -> TTS -> playback | Todo | PC server、ASR/TTS 串接與回放 |
 | 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
 | 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
@@ -24,17 +24,20 @@ Last updated: 2026-05-23
 
 - 保留 GPIO/Button 測試行為，K0 會觸發播放內建測試音效。
 - 透過 USART1 與 USB CDC 輸出 debug log。
-- USART1 目前用於接收 ESP32 的 `PONG` 回覆。
-- 每秒送出 `PING` 給 ESP32，收到 `PONG` 時輸出 `ESP32 PONG OK`。
+- USART1 / ESP32 Serial2 已升到 `921600 8N1`；週期性 PING/PONG 已關閉，避免干擾音訊 log。
 - K1 啟動 0.5 秒麥克風錄音（`RECORD_SAMPLE_COUNT 8000`），錄到 RAM buffer 後播放，**已可辨識語音**。
 - 錄音信號處理鏈：DC removal → invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）→ gain（`RECORD_GAIN 12`）。
 - Invalid sample 使用 filter decay 而非硬切 0，避免突然靜音造成 pop。
-- I2S2 master TX 會持續餵 `SPI_DR`，維持 BCLK/WS，避免麥克風失去 clock。
+- I2S2 full-duplex DMA circular buffer 會持續維持 RX/TX 音訊資料流與 BCLK/WS。
 - K0 播放 Koharu login 測試語音：`audio_test/BA_V_Koharu_Login_1.ogg` 已解碼成 `audio_test/test.wav`，再轉成內建 `audio_clip`，用來驗證 MAX98357A 與喇叭輸出路徑。
 - 麥克風目前主要在 left channel 有有效資料。
 - 錄完時 USB CDC 會輸出 `Mic record done: playback start inv ... Lavg ... Lpk ... Ravg ... Rpk ... ovr ...` 與前 16 筆 PCM 值的 dump。
-- live speaker loopback 已關閉：`LOOPBACK_SPEAKER_ENABLE 0U`，避免尖叫、爆音與聲學回授。
+- live speaker loopback 已關閉：`LOOPBACK_SPEAKER_ENABLE 0U`，避免尖叫、爆音與聲學回授；它不是最終語音助理流程的必要功能。
 - 內建 `RECORD_TEST_TONE` 開關可切換為 400Hz 三角波測試音，驗證 playback path。
+- `PCM1`：K1 錄完 0.5 秒後，STM32 將同一份 `record_buffer` 打包成 24-byte header + 16000-byte payload，ESP32 收完整後可轉 TCP 到 PC。
+- `AUD1`：PC sender 送固定長度 16 kHz mono signed 16-bit PCM frame 到 ESP32 TCP port `5001`，ESP32 分 chunk 轉 USART1，STM32 以 64 KB ring buffer 串到 I2S DMA 播放。
+- AUD1 v1 只支援固定 `sample_count`；`seq` 只做 log/debug 關聯，不做 reorder 或 retransmit。
+- 長音樂片段已可正常播放；目前偶發爆音的首要觀察點是 STM32 log 的 `AUD level`、`underrun`、`overflow`。
 
 ## Hardware Notes
 
@@ -63,11 +66,11 @@ Last updated: 2026-05-23
 
 ## Current Checkpoint
 
-Stage 7 record-then-playback 已可辨識語音。K0 證明輸出路徑正常；K1 錄音經過 LPF、noise gate 與 invalid decay 處理後，回放可聽出人聲與環境音，但仍有背景雜訊。firmware 已切到 I2S2 full-duplex DMA circular buffer，下一步是在硬體上確認 K1 重複錄音時 `ovr:0` 且不再出現整段純雜訊。
+Stage 8 已進入 functional/stabilizing。STM32 -> ESP32 -> PC 的 `PCM1` 錄音回傳已實作，PC -> ESP32 -> STM32 -> MAX98357A 的 `AUD1` 固定長度播放也已能播放長音樂。仍需針對長時間播放偶發爆音收 log；若爆音同時伴隨 `underrun` 或 ring level 長期歸零，優先調整 PC pacing / prebuffer / Wi-Fi 穩定度。
 
 ## Next Work
 
-1. 微調錄音參數（LPF alpha、noise gate threshold、invalid magnitude）以改善信噪比。
-2. 實測 I2S RX/TX DMA circular buffer，確認 `ovr:0`、K0 播放正常、K1 錄音不再隨機變純雜訊。
-3. 等 MIC 資料穩定後，定義 STM32 → ESP32 的 raw PCM packet 格式。
-4. 實作 PC TCP server，準備 ASR/NIM/TTS 全鏈路測試。
+1. 連續播放 5-30 秒 WAV，記錄 `AUD level`、`underrun`、`overflow`，確認偶發爆音是否與 buffer starvation 對應。
+2. 連續送三個短檔，確認下一個 `AUD1` frame 能重置狀態並正常播放。
+3. 若 `AUD1` 長播穩定，再接 Stage 9：ASR -> NIM -> TTS，先用短 TTS WAV 回放。
+4. 若爆音不伴隨 underrun/overflow，回頭查硬體供電、GPIO4 PWM、MAX98357A 電源與喇叭線干擾。
