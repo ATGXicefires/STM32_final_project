@@ -89,6 +89,7 @@ graph TD
 
 - [process.md](process.md)：專案開發流程、燒錄流程、Stage roadmap。
 - [progress.md](progress.md)：目前完成度、當前 firmware 行為、下一步。
+- [docs/index.md](docs/index.md)：快速索引與功能區塊導覽。
 - [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)：USB DFU 燒錄與 SWD 問題整理。
 - [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md)：Stage 6 麥克風排查紀錄。
 - [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)：Stage 7 capture/playback、K0/K1 測試、接線與 OVR 診斷紀錄。
