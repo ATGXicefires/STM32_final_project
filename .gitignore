@@ -11,3 +11,10 @@
 Thumbs.db
 Desktop.ini
 ESP32_UART_Bridge_Test/wifi_config.h
+
+# Audio test artifacts (keep one sample)
+audio_test/*.wav
+audio_test/*.flac
+audio_test/*.ogg
+stage8_received.wav
+!audio_test/BA_V_Koharu_Swimsuit_Season_Birthday.ogg
