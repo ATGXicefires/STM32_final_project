@@ -15,8 +15,8 @@ Last updated: 2026-05-24
 | 5. MAX98357A I2S playback | Done | I2S2 TX 播放 beep 與 embedded WAV clip 通過 |
 | 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
 | 7. Audio capture/playback validation | Done | K0 播放通過；K1 先錄 0.5 秒再回放，語音可辨識；I2S DMA 已驗證，OVR 不再是 Stage 8 blocker；live loopback 非必要並維持關閉 |
-| 8. ESP32 audio streaming | Current / Stabilizing | `PCM1` 錄音回 PC 已實作；`AUD1` PC -> ESP32 -> STM32 長音樂播放可用，偶發爆音仍需追 underrun/overflow 或硬體雜訊 |
-| 9. ASR -> NIM -> TTS -> playback | Todo | PC server、ASR/TTS 串接與回放 |
+| 8. ESP32 audio streaming | Done | K1 hold-to-record PCM1 串流回 PC 完成；`AUD1` 長音樂播放可用；PCM1 多 chunk 佇列、ESP32 32KB UART RX buffer 均已驗證 |
+| 9. ASR -> NIM -> TTS -> playback | Current | PC server、ASR/TTS 串接與回放 |
 | 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
 | 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
 
@@ -25,7 +25,7 @@ Last updated: 2026-05-24
 - 保留 GPIO/Button 測試行為，K0 會觸發播放內建測試音效。
 - 透過 USART1 與 USB CDC 輸出 debug log。
 - USART1 / ESP32 Serial2 已升到 `921600 8N1`；週期性 PING/PONG 已關閉，避免干擾音訊 log。
-- K1 啟動 0.5 秒麥克風錄音（`RECORD_SAMPLE_COUNT 8000`），錄到 RAM buffer 後播放，**已可辨識語音**。
+- K1 hold-to-record 串流錄音：按住 K1 期間持續將 0.5 秒 chunk（8000 samples）透過 USART1 以 PCM1 格式送往 ESP32，放開時送出尾端不足 0.5 秒的 partial chunk。STM32 使用 2-slot PCM TX queue，確保佇列不會因為 TX 忙碌而靜默丟棄 chunk。
 - 錄音信號處理鏈：invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ DC removal → gain（`RECORD_GAIN 12`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）。
 - Invalid sample 使用 filter decay 而非硬切 0，避免突然靜音造成 pop。
 - I2S2 full-duplex DMA circular buffer 會持續維持 RX/TX 音訊資料流與 BCLK/WS。
@@ -34,7 +34,7 @@ Last updated: 2026-05-24
 - 錄完時 USB CDC 會輸出 `Mic record done: playback start inv ... Lavg ... Lpk ... Ravg ... Rpk ... ovr ...` 與前 16 筆 PCM 值的 dump。
 - live speaker loopback 已關閉：`LOOPBACK_SPEAKER_ENABLE 0U`，避免尖叫、爆音與聲學回授；它不是最終語音助理流程的必要功能。
 - 內建 `RECORD_TEST_TONE` 開關可切換為 400Hz 三角波測試音，驗證 playback path。
-- `PCM1`：K1 錄完 0.5 秒後，STM32 將同一份 `record_buffer` 打包成 24-byte header + 16000-byte payload，ESP32 收完整後可轉 TCP 到 PC。
+- `PCM1`：K1 放開後，每個 PCM1 frame 攜帶實際錄音樣本數（最後 chunk 為變動長度），PC 端 `pcm_tcp_receiver.py` 將所有 frame 串接成一個 WAV 檔，總長度等同按鍵時間。
 - `AUD1`：PC sender 送固定長度 16 kHz mono signed 16-bit PCM frame 到 ESP32 TCP port `5001`，ESP32 分 chunk 轉 USART1，STM32 以 64 KB ring buffer 串到 I2S DMA 播放。
 - AUD1 v1 只支援固定 `sample_count`；`seq` 只做 log/debug 關聯，不做 reorder 或 retransmit。
 - 長音樂片段已可正常播放；目前偶發爆音的首要觀察點是 STM32 log 的 `AUD level`、`underrun`、`overflow`。
@@ -66,15 +66,16 @@ Last updated: 2026-05-24
 
 ## Current Checkpoint
 
-Stage 8 已進入 functional/stabilizing。STM32 -> ESP32 -> PC 的 `PCM1` 錄音回傳已實作，PC -> ESP32 -> STM32 -> MAX98357A 的 `AUD1` 固定長度播放也已能播放長音樂。仍需針對長時間播放偶發爆音收 log；若爆音同時伴隨 `underrun` 或 ring level 長期歸零，優先調整 PC pacing / prebuffer / Wi-Fi 穩定度。
+Stage 8 完成。STM32 K1 hold-to-record PCM1 串流、ESP32 UART RX overrun 修正（32 KB buffer）、STM32 PCM TX 2-slot queue 均已驗證可用。`AUD1` 長音樂播放正常。
 
-PC 端測試工具以專案 `.venv` 為準；在 Codex sandbox 內 `.venv\Scripts\python.exe` 可能需要提權才能啟動。不要用系統 Python 3.14 直接跑 `tools/aud1_tcp_sender.py`，因為該腳本目前依賴已移除的 `audioop` 標準庫。
+下一步為 Stage 9：PC 端 server 銜接 ASR/NIM/TTS，完成語音助理完整對話流程。
+
+PC 端測試工具以專案 `.venv` 為準；不要用系統 Python 3.14 直接跑 `tools/aud1_tcp_sender.py`，因為該腳本目前依賴已移除的 `audioop` 標準庫。
 
 ## Next Work
 
-1. Stage 8 baseline：重新確認 K0 內建 clip、K1 本機錄音回放、K1 `PCM1` 錄音回 PC 都正常。
-2. Stage 8 long-play：連續播放 5、10、30 秒 WAV，記錄 STM32 USB CDC 的 `AUD level`、`underrun`、`overflow`。
-3. Stage 8 reset：連續送三個短 `AUD1` 檔案，確認每個 frame 都能重置狀態並正常播放。
-4. Stage 8 diagnosis：若爆音伴隨 underrun/ring level 歸零，調整 PC pacing、prebuffer、Wi-Fi 穩定度；若無 underrun/overflow，回查供電、GPIO4 PWM、MAX98357A 電源與喇叭線干擾。
-5. Stage 9 prototype：Stage 8 驗收後，先做 PC local server，把 `PCM1` WAV 接到 ASR，再把一段固定 TTS WAV 用 `AUD1` 回放。
-6. Stage 9 integration：確認 ASR -> NIM -> TTS -> AUD1 全鏈路後，再做錯誤處理、延遲量測與最小 UI/OLED 狀態。
+1. Stage 9 prototype：PC local server 監聽 `PCM1` WAV，接 ASR，把一段固定 TTS WAV 用 `AUD1` 回放，驗證全鏈路基本通。
+2. Stage 9 NIM integration：ASR 輸出接 NIM LLM，LLM 輸出接 TTS，TTS 輸出以 `AUD1` 回放。
+3. Stage 9 latency / error handling：量測端到端延遲，加 timeout 與失敗重試。
+4. Stage 10 OLED / UI：顯示音量、連線、狀態與對話文字。
+5. Stage 11 final validation：長時間穩定度測試與期末報告。

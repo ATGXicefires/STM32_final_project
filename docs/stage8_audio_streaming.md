@@ -4,11 +4,10 @@ Last updated: 2026-05-24
 
 ## Current Status
 
-Stage 8 is functional and in stabilization.
+Stage 8 is complete.
 
-- `PCM1` path: STM32 records 0.5 seconds into `record_buffer`, sends a fixed-length PCM frame over USART1, ESP32 receives it, then forwards it to the PC TCP receiver.
+- `PCM1` path: K1 hold-to-record streaming. While K1 is held, STM32 continuously fills 0.5-second double-buffers (8000 samples each) and enqueues each completed buffer to a 2-slot PCM TX queue over USART1. ESP32 receives each PCM1 frame and forwards it to the PC TCP receiver over a new TCP connection. On K1 release, any partial buffer (actual recorded samples, no zero padding) is also queued and sent. PC side concatenates all frames into a single WAV.
 - `AUD1` path: PC sender converts a WAV file to 16 kHz mono signed 16-bit PCM, sends one fixed-length `AUD1` frame to ESP32 TCP port `5001`, ESP32 ACKs and forwards chunks to STM32 over `Serial2`, and STM32 plays through MAX98357A from a 64 KB ring buffer.
-- Long music playback works. Rare pop/noise events can still happen during longer runs, so the current debug target is to correlate those events with `underrun`, `overflow`, Wi-Fi jitter, or hardware noise.
 
 ## Hardware Wiring
 
@@ -51,12 +50,12 @@ Header is 24 bytes:
 
 - `magic[4] = "PCM1"`
 - `sample_rate u32 = 16000`
-- `sample_count u32 = 8000`
-- `payload_bytes u32 = 16000`
+- `sample_count u32` — 8000 for full 0.5-second chunks; smaller for the final partial chunk on K1 release
+- `payload_bytes u32 = sample_count * 2`
 - `seq u32`
 - `checksum u32`
 
-Payload is little-endian signed 16-bit mono PCM.
+Payload is little-endian signed 16-bit mono PCM. One recording session (K1 hold to K1 release) produces N full frames followed by one partial frame. The PC receiver concatenates all payloads into a single WAV whose total length matches the K1 hold duration.
 
 ### AUD1: PC To STM32 Playback
 
@@ -85,6 +84,7 @@ ESP32 sends simple ASCII ACK lines back to the PC TCP sender:
 - STM32 USART1 RX uses DMA circular buffering.
 - STM32 AUD1 playback uses a 64 KB ring buffer.
 - Playback starts after 8 KB prebuffer or after a short payload is fully received.
+- ESP32 UART2 RX buffer is 32 KB (`Serial2.setRxBufferSize(32768)`) to absorb the 16 KB PCM1 payload while a TCP connection is being established for the previous frame.
 - ESP32 forwards TCP data to UART in 256-byte UART writes.
 - PC sender sends an 8 KB prebuffer by default, waits for an `AUDACK`, then sends 1024-byte ACK-paced chunks.
 - Sender pacing targets real-time 16 kHz 16-bit mono playback after the prebuffer. The defaults can be tuned with `--prebuffer-bytes` and `--chunk-bytes`.
@@ -122,9 +122,9 @@ Useful sender controls:
 - `--prebuffer-bytes <n>` changes how much payload is sent before real-time pacing starts.
 - `--chunk-bytes <n>` changes each ACK-paced payload chunk size.
 
-## Current Debug Notes
+## Debug Reference
 
-If a rare pop/noise event happens during long playback, first check STM32 USB CDC logs:
+STM32 USB CDC log fields for AUD1 playback:
 
 - `AUD level:<n>`: ring buffer fill level in bytes.
 - `underrun:<n>`: increments when I2S needs a sample but the ring is empty.
@@ -132,14 +132,14 @@ If a rare pop/noise event happens during long playback, first check STM32 USB CD
 
 Interpretation:
 
-- Pop with `underrun` increment or `AUD level` near zero points to buffer starvation, Wi-Fi jitter, TCP pacing, or ESP32 UART scheduling.
-- Pop with `overflow` points to PC/ESP32 sending faster than STM32 consumes.
-- Pop without underrun/overflow points back to hardware: MAX98357A power, speaker wiring, shared ground, ESP32 GPIO4 PWM noise, or breadboard contact.
+- Pop with `underrun` or `AUD level` near zero → buffer starvation; check Wi-Fi jitter, TCP pacing, or ESP32 UART scheduling.
+- Pop with `overflow` → PC/ESP32 sending faster than STM32 consumes.
+- Pop without underrun/overflow → hardware suspect: MAX98357A power, speaker wiring, shared GND, breadboard contact.
 
-## Acceptance Before Stage 9
+## Acceptance (Completed)
 
-- K0 built-in clip still plays.
-- K1 recording still plays back locally and still emits a valid `PCM1` frame.
-- A 5-30 second `AUD1` WAV plays without sustained underrun or overflow.
-- Three consecutive short `AUD1` files reset state and play normally.
-- The Python sender completing means ESP32 accepted the header and sent `AUDDONE` after forwarding the full payload to STM32 UART. Final acceptance still needs STM32 USB CDC logs showing `AUD RX payload done ... OK` and `AUD playback done ...`.
+- K0 built-in clip plays. ✓
+- K1 hold-to-record streaming delivers all PCM1 frames with correct checksums; `pcm_tcp_receiver.py` saves a WAV whose length matches the recording duration. ✓
+- A 5-30 second `AUD1` WAV plays without sustained underrun or overflow. ✓
+- Three consecutive short `AUD1` files reset state and play normally. ✓
+- ESP32 PCM1 UART RX overrun resolved (32 KB RX buffer). ✓

@@ -67,3 +67,4 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## others
 
 Python專案請務必在虛擬環境``.venv``執行
+對話均使用繁體中文進行交流

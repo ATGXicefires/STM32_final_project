@@ -91,6 +91,8 @@ static volatile uint8_t record_playing = 0;
 static volatile uint8_t record_play_done_pending = 0;
 static volatile uint32_t record_index = 0;
 static volatile uint32_t record_play_index = 0;
+static volatile uint8_t  record_write_buf = 0;
+static volatile uint32_t record_length = 0;
 static volatile uint8_t record_done_pending = 0;
 static volatile uint8_t audio_dma_error_pending = 0;
 static volatile uint32_t record_invalid_count = 0;
@@ -108,12 +110,21 @@ static volatile uint32_t dma_channel_valid[2] = {0U, 0U};
 static volatile uint32_t dma_raw_peak[2] = {0U, 0U};
 static volatile uint32_t dma_output_peak = 0;
 static volatile uint32_t dma_frame_count = 0;
-static volatile uint8_t pcm_tx_pending = 0;
 static uint8_t pcm_tx_active = 0;
 static uint8_t pcm_tx_header_sent = 0;
 static uint32_t pcm_tx_seq = 0;
 static uint32_t pcm_tx_offset = 0;
 static uint32_t pcm_tx_checksum = 0;
+static uint8_t *pcm_tx_buf = NULL;
+static uint32_t pcm_tx_bytes = 0U;
+
+#define PCM_TX_QUEUE_SIZE 2U
+typedef struct { uint8_t *buf; uint32_t bytes; } pcm_tx_item_t;
+static pcm_tx_item_t pcm_tx_queue[PCM_TX_QUEUE_SIZE];
+static volatile uint8_t  pcm_tx_q_head = 0U;
+static volatile uint8_t  pcm_tx_q_tail = 0U;
+static volatile uint8_t  pcm_tx_q_count = 0U;
+static volatile uint32_t pcm_tx_dropped = 0U;
 static volatile uint8_t uart_rx_dma_ready = 0;
 static volatile uint8_t aud_rx_active = 0;
 static volatile uint8_t aud_playing = 0;
@@ -141,7 +152,7 @@ static int32_t record_lpf = 0;
 static int32_t loopback_dc_estimate = 0;
 static int32_t loopback_output_filter = 0;
 static int16_t loopback_output_sample = 0;
-static int16_t record_buffer[RECORD_SAMPLE_COUNT];
+static int16_t record_buf[2][RECORD_SAMPLE_COUNT];
 static uint8_t aud_ring_buffer[AUD_RING_BUFFER_BYTES];
 static uint8_t uart_rx_dma_buffer[UART_RX_DMA_BUFFER_BYTES];
 static uint16_t dma_rx_buffer[DMA_AUDIO_BUFFER_HALFWORDS];
@@ -161,17 +172,16 @@ static void Test_SendUsbStatus(const char *message);
 static void Test_SendPingIfDue(uint32_t *last_ping_tick);
 static void Test_HandleUartRx(void);
 static void Test_StartAudioClip(void);
-static void Test_StartMicRecord(void);
-static void Test_CancelMicRecordPlayback(void);
+static void Test_StartMicStreamRecord(void);
+static void Test_StopMicStreamRecord(void);
 static void Test_ResetDmaStats(void);
 static void Test_StartAudioDma(void);
 static void Test_ServiceAudioDma(uint8_t mic_diagnostic_enabled, uint32_t *last_report_tick);
 static void Test_ProcessAudioDmaBlock(uint32_t offset, uint32_t length);
 static int16_t Test_GetNextDmaOutputSample(void);
-static uint32_t Test_ComputePcmChecksum(void);
 static void Test_WriteLe32(uint8_t *buffer, uint32_t offset, uint32_t value);
 static uint32_t Test_ReadLe32(const uint8_t *buffer, uint32_t offset);
-static void Test_RequestPcmTransmit(void);
+static void Test_RequestPcmTransmit(uint8_t *buf, uint32_t bytes);
 static uint8_t Test_IsPcmTransmitBusy(void);
 static void Test_ServicePcmTransmit(void);
 static void Test_StartUartRxDma(void);
@@ -190,7 +200,9 @@ static void Test_ServiceAudStream(uint32_t *last_report_tick);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 static void Test_SendStatus(const char *message) {
-  HAL_UART_Transmit(&huart1, (uint8_t *)message, strlen(message), 10);
+  if ((pcm_tx_q_count == 0U) && (pcm_tx_active == 0U)) {
+    HAL_UART_Transmit(&huart1, (uint8_t *)message, strlen(message), 10);
+  }
   Test_SendUsbStatus(message);
 }
 
@@ -561,8 +573,12 @@ static void Test_StartAudioClip(void) {
   record_playing = 0U;
   record_done_pending = 0U;
   record_play_done_pending = 0U;
-  pcm_tx_pending = 0U;
+  pcm_tx_q_head = 0U;
+  pcm_tx_q_tail = 0U;
+  pcm_tx_q_count = 0U;
   pcm_tx_active = 0U;
+  pcm_tx_header_sent = 0U;
+  pcm_tx_offset = 0U;
   clip_index = 0U;
   clip_playing = 1U;
   clip_done_pending = 0U;
@@ -570,18 +586,19 @@ static void Test_StartAudioClip(void) {
   Test_SendStatus("K0 pressed: Audio clip playback\r\n");
 }
 
-static void Test_StartMicRecord(void) {
+static void Test_StartMicStreamRecord(void) {
   if (i2s2_ready == 0U) {
     Test_SendUsbStatus("Mic record disabled: I2S DMA init failed\r\n");
     return;
   }
-
   __disable_irq();
   Test_ResetAudStream();
   clip_playing = 0U;
   clip_done_pending = 0U;
   record_index = 0U;
   record_play_index = 0U;
+  record_write_buf = 0U;
+  record_length = 0U;
   record_invalid_count = 0U;
   record_done_invalid_count = 0U;
   record_done_lavg = 0U;
@@ -593,50 +610,35 @@ static void Test_StartMicRecord(void) {
   record_lpf = 0;
   record_done_pending = 0U;
   record_play_done_pending = 0U;
-  pcm_tx_pending = 0U;
+  pcm_tx_q_head = 0U;
+  pcm_tx_q_tail = 0U;
+  pcm_tx_q_count = 0U;
   pcm_tx_active = 0U;
+  pcm_tx_header_sent = 0U;
+  pcm_tx_offset = 0U;
   Test_ResetDmaStats();
+  record_active = 1U;
+  record_playing = 0U;
   __enable_irq();
-
-  if (RECORD_TEST_TONE != 0U) {
-    /* Fill buffer with a ~400 Hz triangle wave for playback-path testing */
-    const uint32_t period = 40U; /* 16000/400 = 40 samples per cycle */
-    const int16_t amplitude = 8000;
-    for (uint32_t i = 0U; i < RECORD_SAMPLE_COUNT; i++) {
-      uint32_t phase = i % period;
-      int16_t val;
-      if (phase < (period / 2U)) {
-        val = (int16_t)(-amplitude + (int32_t)(phase * 2U * amplitude / (period / 2U)));
-      } else {
-        val = (int16_t)(amplitude - (int32_t)((phase - period / 2U) * 2U * amplitude / (period / 2U)));
-      }
-      record_buffer[i] = val;
-    }
-    __disable_irq();
-    record_active = 0U;
-    record_playing = 1U;
-    __enable_irq();
-    Test_SendStatus("K1 pressed: TEST TONE playback\r\n");
-  } else {
-    __disable_irq();
-    record_active = 1U;
-    record_playing = 0U;
-    __enable_irq();
-    Test_SendStatus("K1 pressed: mic record start\r\n");
-  }
+  Test_SendStatus("K1 pressed: stream record start\r\n");
 }
 
-static void Test_CancelMicRecordPlayback(void) {
+static void Test_StopMicStreamRecord(void) {
+  uint8_t wb;
+  uint32_t len;
   __disable_irq();
-  Test_ResetAudStream();
+  len = record_index;
+  record_length = len;
   record_active = 0U;
-  record_playing = 0U;
-  record_index = 0U;
-  record_play_index = 0U;
-  pcm_tx_pending = 0U;
-  pcm_tx_active = 0U;
+  wb = record_write_buf;
   __enable_irq();
-  Test_SendStatus("K1 pressed: record/playback cancel\r\n");
+
+  if (len > 0U) {
+    Test_RequestPcmTransmit(
+      (uint8_t *)record_buf[wb],
+      len * sizeof(int16_t));
+  }
+  Test_SendStatus("K1 released: stream record stop, final PCM TX queued\r\n");
 }
 
 static void Test_ResetDmaStats(void) {
@@ -681,7 +683,7 @@ static int16_t Test_GetNextDmaOutputSample(void) {
       clip_done_pending = 1U;
     }
   } else if (record_playing != 0U) {
-    tx_sample = record_buffer[record_play_index];
+    tx_sample = record_buf[record_write_buf ^ 1U][record_play_index];
     record_play_index++;
     if (record_play_index >= RECORD_SAMPLE_COUNT) {
       record_playing = 0U;
@@ -697,14 +699,11 @@ static int16_t Test_GetNextDmaOutputSample(void) {
   return tx_sample;
 }
 
-static uint32_t Test_ComputePcmChecksum(void) {
-  const uint8_t *payload = (const uint8_t *)record_buffer;
+static uint32_t Test_ComputePcmChecksumBuf(const uint8_t *buf, uint32_t bytes) {
   uint32_t checksum = 0U;
-
-  for (uint32_t i = 0U; i < PCM_PACKET_PAYLOAD_BYTES; i++) {
-    checksum += payload[i];
+  for (uint32_t i = 0U; i < bytes; i++) {
+    checksum += buf[i];
   }
-
   return checksum;
 }
 
@@ -722,40 +721,49 @@ static uint32_t Test_ReadLe32(const uint8_t *buffer, uint32_t offset) {
          ((uint32_t)buffer[offset + 3U] << 24);
 }
 
-static void Test_RequestPcmTransmit(void) {
-  if (pcm_tx_active != 0U) {
+static void Test_RequestPcmTransmit(uint8_t *buf, uint32_t bytes) {
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  if (pcm_tx_q_count >= PCM_TX_QUEUE_SIZE) {
+    pcm_tx_dropped++;
+    if (primask == 0U) { __enable_irq(); }
     return;
   }
-
-  pcm_tx_checksum = Test_ComputePcmChecksum();
-  pcm_tx_offset = 0U;
-  pcm_tx_header_sent = 0U;
-  pcm_tx_seq++;
-  pcm_tx_pending = 1U;
+  pcm_tx_queue[pcm_tx_q_head].buf = buf;
+  pcm_tx_queue[pcm_tx_q_head].bytes = bytes;
+  pcm_tx_q_head = (uint8_t)((pcm_tx_q_head + 1U) % PCM_TX_QUEUE_SIZE);
+  pcm_tx_q_count++;
+  if (primask == 0U) { __enable_irq(); }
 }
 
 static uint8_t Test_IsPcmTransmitBusy(void) {
-  return ((pcm_tx_pending != 0U) || (pcm_tx_active != 0U)) ? 1U : 0U;
+  return ((pcm_tx_q_count != 0U) || (pcm_tx_active != 0U)) ? 1U : 0U;
 }
 
 static void Test_ServicePcmTransmit(void) {
   char message[96];
 
-  if ((pcm_tx_active == 0U) && (pcm_tx_pending == 0U)) {
+  if ((pcm_tx_active == 0U) && (pcm_tx_q_count == 0U)) {
     return;
   }
 
-  if ((record_active != 0U) || (clip_playing != 0U)) {
-    return;
-  }
-
-  if ((pcm_tx_active == 0U) && (pcm_tx_pending != 0U)) {
+  if (pcm_tx_active == 0U) {
+    /* Pop next item from queue */
+    __disable_irq();
+    pcm_tx_buf   = pcm_tx_queue[pcm_tx_q_tail].buf;
+    pcm_tx_bytes = pcm_tx_queue[pcm_tx_q_tail].bytes;
+    pcm_tx_q_tail = (uint8_t)((pcm_tx_q_tail + 1U) % PCM_TX_QUEUE_SIZE);
+    pcm_tx_q_count--;
+    __enable_irq();
+    pcm_tx_checksum = Test_ComputePcmChecksumBuf(pcm_tx_buf, pcm_tx_bytes);
+    pcm_tx_offset = 0U;
+    pcm_tx_header_sent = 0U;
+    pcm_tx_seq++;
     pcm_tx_active = 1U;
-    pcm_tx_pending = 0U;
     snprintf(message, sizeof(message),
              "PCM TX start seq:%lu bytes:%lu checksum:%lu\r\n",
              (unsigned long)pcm_tx_seq,
-             (unsigned long)PCM_PACKET_PAYLOAD_BYTES,
+             (unsigned long)pcm_tx_bytes,
              (unsigned long)pcm_tx_checksum);
     Test_SendUsbStatus(message);
   }
@@ -764,8 +772,8 @@ static void Test_ServicePcmTransmit(void) {
     uint8_t header[PCM_PACKET_HEADER_BYTES];
     memcpy(header, PCM_PACKET_MAGIC, 4U);
     Test_WriteLe32(header, 4U, PCM_SAMPLE_RATE);
-    Test_WriteLe32(header, 8U, RECORD_SAMPLE_COUNT);
-    Test_WriteLe32(header, 12U, PCM_PACKET_PAYLOAD_BYTES);
+    Test_WriteLe32(header, 8U, pcm_tx_bytes / sizeof(int16_t));
+    Test_WriteLe32(header, 12U, pcm_tx_bytes);
     Test_WriteLe32(header, 16U, pcm_tx_seq);
     Test_WriteLe32(header, 20U, pcm_tx_checksum);
 
@@ -779,9 +787,9 @@ static void Test_ServicePcmTransmit(void) {
   }
 
   if (pcm_tx_active != 0U) {
-    uint32_t remaining = PCM_PACKET_PAYLOAD_BYTES - pcm_tx_offset;
+    uint32_t remaining = pcm_tx_bytes - pcm_tx_offset;
     uint16_t chunk = (remaining > PCM_UART_CHUNK_BYTES) ? PCM_UART_CHUNK_BYTES : (uint16_t)remaining;
-    uint8_t *payload = (uint8_t *)record_buffer;
+    uint8_t *payload = pcm_tx_buf;
 
     if (chunk > 0U) {
       if (HAL_UART_Transmit(&huart1, &payload[pcm_tx_offset], chunk, 100) != HAL_OK) {
@@ -796,7 +804,7 @@ static void Test_ServicePcmTransmit(void) {
     snprintf(message, sizeof(message),
              "PCM TX done seq:%lu bytes:%lu\r\n",
              (unsigned long)pcm_tx_seq,
-             (unsigned long)PCM_PACKET_PAYLOAD_BYTES);
+             (unsigned long)pcm_tx_bytes);
     Test_SendUsbStatus(message);
     pcm_tx_active = 0U;
     pcm_tx_header_sent = 0U;
@@ -861,21 +869,24 @@ static void Test_ProcessAudioDmaBlock(uint32_t offset, uint32_t length) {
       }
 
       if (record_index < RECORD_SAMPLE_COUNT) {
-        record_buffer[record_index] = (int16_t)pcm;
+        record_buf[record_write_buf][record_index] = (int16_t)pcm;
         record_index++;
       }
 
       if (record_index >= RECORD_SAMPLE_COUNT) {
+        uint8_t filled = record_write_buf;
         record_done_invalid_count = record_invalid_count;
         record_done_lavg = (dma_channel_valid[0] > 0U) ? (uint32_t)(dma_channel_sum[0] / dma_channel_valid[0]) : 0U;
         record_done_ravg = (dma_channel_valid[1] > 0U) ? (uint32_t)(dma_channel_sum[1] / dma_channel_valid[1]) : 0U;
         record_done_lpk = dma_channel_peak[0];
         record_done_rpk = dma_channel_peak[1];
         record_done_ovr = dma_ovr_count;
-        record_active = 0U;
-        record_playing = 1U;
-        record_play_index = 0U;
+        record_write_buf ^= 1U;
+        record_index      = 0U;
         record_done_pending = 1U;
+        Test_RequestPcmTransmit(
+          (uint8_t *)record_buf[filled],
+          RECORD_SAMPLE_COUNT * sizeof(int16_t));
       }
     }
 
@@ -1127,14 +1138,14 @@ int main(void) {
       } else if (button_state == 0x01) {
         Test_StartAudioClip();
       } else if (button_state == 0x02) {
-        if ((record_active != 0U) || (record_playing != 0U)) {
-          Test_CancelMicRecordPlayback();
-        } else {
-          Test_StartMicRecord();
-          last_loopback_report_tick = HAL_GetTick();
-        }
+        Test_StartMicStreamRecord();
+        last_loopback_report_tick = HAL_GetTick();
       } else {
-        Test_SendStatus("Buttons released\r\n");
+        if (record_active != 0U) {
+          Test_StopMicStreamRecord();
+        } else {
+          Test_SendStatus("Buttons released\r\n");
+        }
       }
     }
 
@@ -1160,14 +1171,16 @@ int main(void) {
                (unsigned long)record_done_ovr);
       Test_SendStatus(record_done_msg);
       /* Dump first 16 recorded PCM samples for debug */
-      snprintf(dump, sizeof(dump),
-               "REC[0..15]: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\r\n",
-               record_buffer[0], record_buffer[1], record_buffer[2], record_buffer[3],
-               record_buffer[4], record_buffer[5], record_buffer[6], record_buffer[7],
-               record_buffer[8], record_buffer[9], record_buffer[10], record_buffer[11],
-               record_buffer[12], record_buffer[13], record_buffer[14], record_buffer[15]);
+      {
+        const int16_t *dbuf = record_buf[record_write_buf ^ 1U];
+        snprintf(dump, sizeof(dump),
+                 "REC[0..15]: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\r\n",
+                 dbuf[0], dbuf[1], dbuf[2],  dbuf[3],
+                 dbuf[4], dbuf[5], dbuf[6],  dbuf[7],
+                 dbuf[8], dbuf[9], dbuf[10], dbuf[11],
+                 dbuf[12], dbuf[13], dbuf[14], dbuf[15]);
+      }
       Test_SendUsbStatus(dump);
-      Test_RequestPcmTransmit();
     }
 
     /* USER CODE END WHILE */

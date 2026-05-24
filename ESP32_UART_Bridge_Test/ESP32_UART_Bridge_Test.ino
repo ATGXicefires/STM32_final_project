@@ -522,6 +522,7 @@ static void handleAudTcpClient() {
 
 void setup() {
   Serial.begin(115200);
+  Serial2.setRxBufferSize(32768);
   Serial2.begin(UART_BAUD, SERIAL_8N1, RX2_PIN, TX2_PIN);
 
   if (DEBUG_PWM_ENABLE) {
