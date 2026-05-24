@@ -1,6 +1,6 @@
 # Stage 7 Audio Capture/Playback Debug Record
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 ## Current Status
 
@@ -10,7 +10,7 @@ Last updated: 2026-05-23
   - MAX98357A and speaker can play the embedded clip normally.
 - K1 record-then-playback **works with recognizable speech**.
   - Records 0.5 seconds of mic audio into RAM, then plays through MAX98357A.
-  - Signal processing chain: DC removal → invalid sample rejection → IIR LPF (alpha≈1/8) → noise gate (±80) → gain (12x).
+  - Signal processing chain: invalid sample rejection (with decay) → DC removal → gain (12x) → IIR LPF (alpha≈1/8) → noise gate (±80).
   - Invalid samples use filter decay instead of hard zero to avoid pops.
   - Background noise is still present but speech/knocking is clearly recognizable.
   - A `RECORD_TEST_TONE` switch confirms the playback path works (400Hz triangle wave plays cleanly).
@@ -390,7 +390,7 @@ Conclusion:
 
 The output path is functional (K0 proves it, test tone confirms record_buffer playback path).
 
-The microphone I2S data can still contain noise spikes mixed with valid audio, but the DMA capture path and record-then-playback behavior are good enough for the next project stage. The signal processing chain (DC removal + invalid rejection + IIR LPF + noise gate) is sufficient to produce recognizable speech in buffered record-then-playback mode.
+The microphone I2S data can still contain noise spikes mixed with valid audio, but the DMA capture path and record-then-playback behavior are good enough for the next project stage. The signal processing chain (invalid rejection + DC removal + gain + IIR LPF + noise gate) is sufficient to produce recognizable speech in buffered record-then-playback mode.
 
 Remaining quality limits:
 
@@ -408,6 +408,7 @@ Current Stage 8 result:
 - `PCM1` sends the existing 0.5 second `record_buffer` from STM32 to ESP32, then onward to PC.
 - `AUD1` sends fixed-length 16 kHz mono signed 16-bit PCM from PC to ESP32, then to STM32 for MAX98357A playback.
 - Long music playback is functional, with rare pop/noise events still under stability testing.
+- Stage 9 must wait until Stage 8 passes the long-play and consecutive-short-file acceptance checks in [stage8_audio_streaming.md](stage8_audio_streaming.md).
 
 ## Optional Audio Quality Tuning
 
@@ -423,7 +424,7 @@ Adjust `MIC_INVALID_MAGNITUDE`, `RECORD_GAIN`, `RECORD_NOISE_GATE`, and LPF alph
 
 - Do not enable live speaker loopback as the main test path; it is not required for the final assistant pipeline.
 - Do not assume MAX98357A is broken while K0 playback works.
-- Do not start ASR/NIM/TTS integration until Stage 8 long-play stability is acceptable.
+- Do not start full ASR/NIM/TTS integration until Stage 8 long-play and reset stability are acceptable.
 
 ## Current Conclusion
 

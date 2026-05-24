@@ -39,7 +39,7 @@
 - Stage 7: Audio capture/playback validation
   - K0 plays the embedded Koharu login `audio_clip` generated from `audio_test/test.wav` after decoding `audio_test/BA_V_Koharu_Login_1.ogg`.
   - K1 records 0.5 seconds of microphone audio into RAM, then plays the captured buffer through MAX98357A. **語音已可辨識。**
-  - 錄音信號處理：DC removal → invalid rejection (`MIC_INVALID_MAGNITUDE 500000`) → IIR LPF (alpha≈1/8) → noise gate (`RECORD_NOISE_GATE 80`) → gain (`RECORD_GAIN 12`)。
+   - 錄音信號處理：invalid rejection (`MIC_INVALID_MAGNITUDE 500000`) → DC removal → gain (`RECORD_GAIN 12`) → IIR LPF (alpha≈1/8) → noise gate (`RECORD_NOISE_GATE 80`)。
   - Invalid samples 使用 filter decay 而非硬切 0。
   - STM32 使用 I2S2 full-duplex DMA circular buffer 維持 BCLK/WS 與音訊收送。
   - 錄音完成時輸出 `inv`、left/right avg/peak、`ovr` 診斷與前 16 筆 PCM dump。
@@ -60,6 +60,74 @@
 - Stage 9: ASR -> NIM -> TTS -> playback
 - Stage 10: OLED and UI status
 - Stage 11: Stability test and final report
+
+## Current Execution Plan
+
+### Phase A: Stage 8 Stabilization
+
+Goal: prove that the audio transport is stable enough before adding ASR/NIM/TTS.
+
+1. Baseline hardware check:
+   - K0 plays the embedded Koharu login clip.
+   - K1 records 0.5 seconds, then plays the captured buffer locally.
+   - K1 also emits a valid `PCM1` frame that PC saves as `stage8_received.wav`.
+2. AUD1 long-play check:
+   - Send 5 second, 10 second, and 30 second WAV files through `AUD1`.
+   - Capture STM32 USB CDC logs during playback.
+   - Accept only if playback has no sustained `underrun` or `overflow`.
+3. AUD1 reset check:
+   - Send three short WAV files consecutively.
+   - Confirm each new frame starts cleanly and previous ring-buffer state does not leak into the next playback.
+4. Pop/noise diagnosis:
+   - If pop/noise appears with `underrun` or `AUD level` near zero, tune PC pacing, prebuffer, Wi-Fi stability, or ESP32 UART scheduling.
+   - If pop/noise appears without `underrun` or `overflow`, inspect hardware power, common ground, speaker wiring, ESP32 GPIO4 PWM, and breadboard contact.
+
+### Phase B: Stage 9 Prototype
+
+Goal: reuse the verified Stage 8 transport before building more UI.
+
+1. Keep STM32 firmware unchanged unless Stage 8 exposes a transport bug.
+2. Build a PC local server that receives the existing `PCM1` WAV path.
+3. Run ASR on the received 0.5 second recording.
+4. Send a fixed test response through NIM or a stub while validating the transport.
+5. Convert the response to a short 16 kHz mono WAV and play it back through existing `AUD1`.
+
+### Phase C: Stage 9 Integration
+
+Goal: turn the prototype into the actual assistant loop.
+
+1. Replace the stub with real NIM prompt/response handling.
+2. Add TTS generation and normalize output to the `AUD1` format.
+3. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.
+4. Add basic retry/failure messages for network, ASR, NIM, and TTS failures.
+
+### Phase D: Stage 10-11 Finish
+
+Goal: make the demo explainable and repeatable.
+
+1. Add OLED/UI status only after Stage 9 audio loop works.
+2. Display compact states such as idle, recording, sending, thinking, speaking, and error.
+3. Run repeated demo cycles and one longer stability session.
+4. Freeze final wiring, commands, known limitations, and demo script for the report.
+
+## Stage 8 Test Checklist
+
+1. Start the PC receiver:
+   - `.\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output stage8_received.wav`
+2. Press K1 and verify:
+   - Local playback is recognizable.
+   - ESP32 forwards one `PCM1` frame.
+   - `stage8_received.wav` is 16 kHz mono, 0.5 seconds, 8000 samples.
+3. Send AUD1 playback with the sender's built-in default WAV/host/port:
+   - `.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py`
+   - If the ESP32 IP is different from the built-in default, add `--host <ESP32_IP>`.
+4. During AUD1 playback, watch STM32 USB CDC:
+   - `AUD level:<n>`
+   - `underrun:<n>`
+   - `overflow:<n>`
+   - `AUD RX payload done ... OK`
+   - `AUD playback done ...`
+5. Record whether any audible pop/noise aligns with `underrun`, `overflow`, or low ring level.
 
 ## Stage 7 Test Checklist
 

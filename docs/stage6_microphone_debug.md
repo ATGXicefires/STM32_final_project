@@ -13,6 +13,8 @@ Stage 7 diagnostics supersede the original channel conclusion in this file.
 
 驗證 STM32F407 是否能透過 I2S2 full-duplex 讀到 I2S MEMS microphone 資料，為 Stage 7 audio loopback 做準備。
 
+This file is historical debug evidence. The current project state is Stage 8 audio streaming stabilization; do not use this file as the live roadmap.
+
 ## Hardware
 
 - Microphone module label: ICS43434，雖然購買時標示 INMP441。
@@ -44,10 +46,12 @@ Fix:
 
 At this point in the Stage 6 investigation, SELECT tied to GND appeared to produce valid data on right channel (`CHSIDE=1`). Later Stage 7 diagnostics corrected this interpretation; use the Stage 7 document for current channel handling.
 
-Fix:
+Historical action taken at that time:
 
 - Read right-channel frames only.
 - Treat `CHSIDE=1` as valid microphone sample timing.
+
+Current status: this was later superseded. Stage 7 diagnostics showed the useful microphone data is on the left channel for the current wiring.
 
 ## Investigation Log
 
@@ -175,4 +179,4 @@ Stage 6 is considered complete because:
 - Microphone sample values react to ambient sound.
 - Active-channel handling was later refined during Stage 7 diagnostics.
 
-The next step is Stage 7 polling loopback, then replacing the polling path with DMA circular buffers.
+This Stage 6 note is closed. Stage 7 has already moved the firmware to I2S2 full-duplex DMA circular buffers, and current work is tracked in [stage8_audio_streaming.md](stage8_audio_streaming.md).

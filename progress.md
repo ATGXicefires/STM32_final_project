@@ -1,6 +1,6 @@
 # STM32 Final Project Progress
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
@@ -10,7 +10,7 @@ Last updated: 2026-05-23
 | :--- | :--- | :--- |
 | 1. GPIO / LED | Done | D2=`PA6`、D3=`PA7`，active-low，交替閃爍正常 |
 | 2. Button input | Done | K0=`PE4`、K1=`PE3`，pull-up，按下為 low |
-| 3. USART1 USB-TTL | Done | `PA9/PA10`，115200 8N1，echo 測試通過 |
+| 3. USART1 USB-TTL | Done | `PA9/PA10` echo 測試通過；Stage 8 音訊橋接目前使用 `921600 8N1` |
 | 4. ESP32 UART PING/PONG | Done | STM32 sends `PING`，ESP32 replies `PONG` |
 | 5. MAX98357A I2S playback | Done | I2S2 TX 播放 beep 與 embedded WAV clip 通過 |
 | 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
@@ -26,7 +26,7 @@ Last updated: 2026-05-23
 - 透過 USART1 與 USB CDC 輸出 debug log。
 - USART1 / ESP32 Serial2 已升到 `921600 8N1`；週期性 PING/PONG 已關閉，避免干擾音訊 log。
 - K1 啟動 0.5 秒麥克風錄音（`RECORD_SAMPLE_COUNT 8000`），錄到 RAM buffer 後播放，**已可辨識語音**。
-- 錄音信號處理鏈：DC removal → invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）→ gain（`RECORD_GAIN 12`）。
+- 錄音信號處理鏈：invalid sample rejection（`MIC_INVALID_MAGNITUDE 500000`）→ DC removal → gain（`RECORD_GAIN 12`）→ IIR LPF（alpha≈1/8）→ noise gate（`RECORD_NOISE_GATE 80`）。
 - Invalid sample 使用 filter decay 而非硬切 0，避免突然靜音造成 pop。
 - I2S2 full-duplex DMA circular buffer 會持續維持 RX/TX 音訊資料流與 BCLK/WS。
 - K0 播放 Koharu login 測試語音：`audio_test/BA_V_Koharu_Login_1.ogg` 已解碼成 `audio_test/test.wav`，再轉成內建 `audio_clip`，用來驗證 MAX98357A 與喇叭輸出路徑。
@@ -50,8 +50,8 @@ Last updated: 2026-05-23
 
 ### USART1 / ESP32
 
-- STM32 USART1：`PA9` TX、`PA10` RX，115200 8N1。
-- ESP32 測試 firmware 使用 `Serial2`，115200 8N1。
+- STM32 USART1：`PA9` TX、`PA10` RX；Stage 8 audio bridge 使用 `921600 8N1`。
+- ESP32 bridge firmware 使用 `Serial2`，同樣為 `921600 8N1`。
 - USB-TTL 標籤可能不準，實務上以 echo 測試成功的 TX/RX 交叉接法為準。
 
 ### I2S2 Audio
@@ -68,9 +68,13 @@ Last updated: 2026-05-23
 
 Stage 8 已進入 functional/stabilizing。STM32 -> ESP32 -> PC 的 `PCM1` 錄音回傳已實作，PC -> ESP32 -> STM32 -> MAX98357A 的 `AUD1` 固定長度播放也已能播放長音樂。仍需針對長時間播放偶發爆音收 log；若爆音同時伴隨 `underrun` 或 ring level 長期歸零，優先調整 PC pacing / prebuffer / Wi-Fi 穩定度。
 
+PC 端測試工具以專案 `.venv` 為準；在 Codex sandbox 內 `.venv\Scripts\python.exe` 可能需要提權才能啟動。不要用系統 Python 3.14 直接跑 `tools/aud1_tcp_sender.py`，因為該腳本目前依賴已移除的 `audioop` 標準庫。
+
 ## Next Work
 
-1. 連續播放 5-30 秒 WAV，記錄 `AUD level`、`underrun`、`overflow`，確認偶發爆音是否與 buffer starvation 對應。
-2. 連續送三個短檔，確認下一個 `AUD1` frame 能重置狀態並正常播放。
-3. 若 `AUD1` 長播穩定，再接 Stage 9：ASR -> NIM -> TTS，先用短 TTS WAV 回放。
-4. 若爆音不伴隨 underrun/overflow，回頭查硬體供電、GPIO4 PWM、MAX98357A 電源與喇叭線干擾。
+1. Stage 8 baseline：重新確認 K0 內建 clip、K1 本機錄音回放、K1 `PCM1` 錄音回 PC 都正常。
+2. Stage 8 long-play：連續播放 5、10、30 秒 WAV，記錄 STM32 USB CDC 的 `AUD level`、`underrun`、`overflow`。
+3. Stage 8 reset：連續送三個短 `AUD1` 檔案，確認每個 frame 都能重置狀態並正常播放。
+4. Stage 8 diagnosis：若爆音伴隨 underrun/ring level 歸零，調整 PC pacing、prebuffer、Wi-Fi 穩定度；若無 underrun/overflow，回查供電、GPIO4 PWM、MAX98357A 電源與喇叭線干擾。
+5. Stage 9 prototype：Stage 8 驗收後，先做 PC local server，把 `PCM1` WAV 接到 ASR，再把一段固定 TTS WAV 用 `AUD1` 回放。
+6. Stage 9 integration：確認 ASR -> NIM -> TTS -> AUD1 全鏈路後，再做錯誤處理、延遲量測與最小 UI/OLED 狀態。

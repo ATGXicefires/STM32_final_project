@@ -284,7 +284,7 @@
                 <span class="tag">Audio I/O</span>
                 <h4>Peripherals (Mic / Amp)</h4>
                 <ul>
-                    <li><strong>ICS43434：</strong>提供 I2S 數位聲音輸入，實測 SELECT=GND 時資料位於右聲道。</li>
+                    <li><strong>ICS43434：</strong>提供 I2S 數位聲音輸入，目前有效資料主要在 left channel。</li>
                     <li><strong>MAX98357A：</strong>高效率 Class D 功率放大，直接驅動喇叭。</li>
                 </ul>
             </div>
@@ -303,12 +303,12 @@
                 <p>先驗證 MAX98357A 播放，再驗證 ICS43434 收音。STM32 I2S master TX 必須持續餵資料，才能維持 BCLK/WS。</p>
             </div>
             <div class="step-item" data-step="3">
-                <strong>Audio Loopback</strong>
-                <p>目前 Stage 7 先用 polling loopback 驗證「麥克風輸入會即時影響喇叭輸出」，通過後再改成 DMA circular buffer。</p>
+                <strong>Audio Capture / Playback</strong>
+                <p>Stage 7 已完成 buffered capture/playback 驗證，firmware 目前使用 I2S2 full-duplex DMA circular buffer。</p>
             </div>
             <div class="step-item" data-step="4">
                 <strong>ESP32 音訊橋接</strong>
-                <p>定義 STM32 到 ESP32 的 raw PCM packet 格式，再由 ESP32 透過 Wi-Fi TCP 轉送到 PC。</p>
+                <p>Stage 8 已打通 `PCM1` 錄音上傳與 `AUD1` 音訊回放，現在主要追蹤長播偶發爆音與 buffer 狀態。</p>
             </div>
             <div class="step-item" data-step="5">
                 <strong>PC AI Pipeline 與 UI</strong>
@@ -319,7 +319,7 @@
 
     <div class="card">
         <h2>開發進度排程 (Project Roadmap)</h2>
-        <p>目前 Stage 1-6 已完成，Stage 7 正在驗證 audio loopback。後續重點是 DMA 化、ESP32 音訊串流與 PC 端 ASR/NIM/TTS 串接。</p>
+        <p>目前 Stage 1-7 已完成，Stage 8 audio streaming 已可雙向傳輸並進入穩定化。下一步是完成長播與連續短檔驗收，再接 PC 端 ASR/NIM/TTS。</p>
         <div class="mermaid">
             gantt
                 title 專題開發里程碑
@@ -332,12 +332,13 @@
                 MAX98357A 播放測試          :done, a3, after a2, 4d
                 ICS43434 收音測試           :done, a4, after a3, 5d
                 
+                Audio Capture / Playback    :done, b1, after a4, 4d
+                DMA Circular Buffer         :done, b2, after b1, 6d
+
                 section 進行中
-                Polling Audio Loopback      :active, b1, after a4, 4d
-                DMA Circular Buffer         :crit, b2, after b1, 6d
+                ESP32 Audio Streaming       :active, c1, after b2, 6d
                 
                 section 待完成
-                ESP32 Audio Streaming       :c1, after b2, 6d
                 PC ASR / NIM / TTS Pipeline :c2, after c1, 7d
                 OLED Status UI              :c3, after c2, 4d
                 

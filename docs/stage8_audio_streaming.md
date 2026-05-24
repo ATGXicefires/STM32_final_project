@@ -1,13 +1,13 @@
 # Stage 8 Audio Streaming Status
 
-Last updated: 2026-05-23
+Last updated: 2026-05-24
 
 ## Current Status
 
 Stage 8 is functional and in stabilization.
 
 - `PCM1` path: STM32 records 0.5 seconds into `record_buffer`, sends a fixed-length PCM frame over USART1, ESP32 receives it, then forwards it to the PC TCP receiver.
-- `AUD1` path: PC sends a fixed-length WAV/PCM frame to ESP32 TCP port `5001`, ESP32 forwards chunks to STM32 over `Serial2`, and STM32 plays through MAX98357A from a 64 KB ring buffer.
+- `AUD1` path: PC sender converts a WAV file to 16 kHz mono signed 16-bit PCM, sends one fixed-length `AUD1` frame to ESP32 TCP port `5001`, ESP32 ACKs and forwards chunks to STM32 over `Serial2`, and STM32 plays through MAX98357A from a 64 KB ring buffer.
 - Long music playback works. Rare pop/noise events can still happen during longer runs, so the current debug target is to correlate those events with `underrun`, `overflow`, Wi-Fi jitter, or hardware noise.
 
 ## Hardware Wiring
@@ -36,6 +36,13 @@ ESP32 bridge wiring:
 - `ESP32_UART_Bridge_Test/wifi_config.example.h` documents the expected local settings.
 - ESP32 GPIO4 debug PWM is disabled by default (`DEBUG_PWM_ENABLE = false`) because it is not required for the bridge and can be a hardware-noise suspect during long playback.
 
+## PC Tooling Notes
+
+- Use the project `.venv` for Stage 8 test tools.
+- In the Codex sandbox, `.venv\Scripts\python.exe` may require elevated execution; if it works after elevation, do not rebuild the venv just because the sandbox launch failed.
+- System Python 3.14+ is not a valid substitute for `tools/aud1_tcp_sender.py` yet, because that script currently imports the removed `audioop` module for WAV conversion.
+- `tools\pcm_tcp_receiver.py` can run on newer Python, but keep both receiver and sender on the same `.venv` during acceptance tests to avoid environment drift.
+
 ## Protocols
 
 ### PCM1: STM32 To PC
@@ -62,7 +69,16 @@ Header is 24 bytes:
 - `seq u32`
 - `checksum u32`
 
-`AUD1` v1 is fixed-length only. `sample_count` is the only length source. There is no unknown-length streaming mode and no end-of-stream frame. `seq` is for log/debug correlation only; STM32 does not reorder or retransmit.
+`AUD1` v1 is fixed-length only. `sample_count` is the only length source. There is no unknown-length streaming mode and no end-of-stream frame in the STM32 protocol. `seq` is for log/debug correlation only; STM32 does not reorder or retransmit.
+
+ESP32 sends simple ASCII ACK lines back to the PC TCP sender:
+
+- `AUDHOK <seq>` after the header is accepted and forwarded to STM32 UART.
+- `AUDACK <bytes>` as payload bytes are forwarded to STM32 UART.
+- `AUDDONE <seq>` after ESP32 has forwarded the full payload to STM32 UART and closed the TCP client.
+- `AUDERR <code>` when ESP32 rejects the header or cannot continue forwarding.
+
+`tools\aud1_tcp_sender.py` waits for these ACKs. It treats `AUDERR` as failure, waits for `AUDHOK` before payload, waits for each `AUDACK` threshold while sending payload, and waits for final `AUDDONE` before printing completion.
 
 ## Playback Buffering
 
@@ -70,7 +86,8 @@ Header is 24 bytes:
 - STM32 AUD1 playback uses a 64 KB ring buffer.
 - Playback starts after 8 KB prebuffer or after a short payload is fully received.
 - ESP32 forwards TCP data to UART in 256-byte UART writes.
-- PC sender sends an 8 KB prebuffer, then 1024-byte ACK-paced chunks.
+- PC sender sends an 8 KB prebuffer by default, waits for an `AUDACK`, then sends 1024-byte ACK-paced chunks.
+- Sender pacing targets real-time 16 kHz 16-bit mono playback after the prebuffer. The defaults can be tuned with `--prebuffer-bytes` and `--chunk-bytes`.
 - STM32 writes AUD1 payload into the ring buffer as complete 16-bit sample pairs.
 - On underrun, STM32 decays the last sample toward zero instead of hard-switching to zero, reducing audible pops from discontinuities.
 
@@ -82,13 +99,28 @@ Start the PC receiver for STM32 recordings:
 .\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output stage8_received.wav
 ```
 
-Send a WAV file to ESP32 for playback:
+Send the built-in default WAV file to ESP32 for playback:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py "audio_test\your_16k_or_resampleable.wav" --host <ESP32_IP> --port 5001
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py
 ```
 
-The sender accepts mono or stereo WAV and converts to 16 kHz mono signed 16-bit PCM before sending.
+The sender currently has default playback settings built in: default WAV path, ESP32 host `172.20.10.3`, TCP port `5001`, sequence `1`, 8 KB prebuffer, and 1024-byte paced chunks.
+
+Only pass extra arguments when overriding the built-in defaults, for example:
+
+```powershell
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP>
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py "audio_test\other.wav" --host <ESP32_IP> --port 5001
+```
+
+When a WAV path is provided, the sender accepts mono or stereo WAV and converts to 16 kHz mono signed 16-bit PCM before sending.
+
+Useful sender controls:
+
+- `--seq <n>` changes the debug sequence number shown in ESP32 and STM32 logs.
+- `--prebuffer-bytes <n>` changes how much payload is sent before real-time pacing starts.
+- `--chunk-bytes <n>` changes each ACK-paced payload chunk size.
 
 ## Current Debug Notes
 
@@ -110,3 +142,4 @@ Interpretation:
 - K1 recording still plays back locally and still emits a valid `PCM1` frame.
 - A 5-30 second `AUD1` WAV plays without sustained underrun or overflow.
 - Three consecutive short `AUD1` files reset state and play normally.
+- The Python sender completing means ESP32 accepted the header and sent `AUDDONE` after forwarding the full payload to STM32 UART. Final acceptance still needs STM32 USB CDC logs showing `AUD RX payload done ... OK` and `AUD playback done ...`.
