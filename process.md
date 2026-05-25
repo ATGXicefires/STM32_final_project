@@ -123,7 +123,7 @@ Goal: make the demo explainable and repeatable.
    - ESP32 forwards one `PCM1` frame.
    - `received.wav` is 16 kHz mono, 0.5 seconds, 8000 samples.
 3. Send AUD1 playback with the sender's default settings:
-   - `.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP>`
+   - `.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py`
 4. During AUD1 playback, watch STM32 USB CDC:
    - `AUD level:<n>`
    - `underrun:<n>`

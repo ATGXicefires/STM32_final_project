@@ -121,10 +121,9 @@ graph TD
    ```powershell
    python tools/pcm_tcp_receiver.py
    ```
-3. **執行音訊發送端**（發送音訊至 ESP32/STM32 播放，預設發送 `audio_test/test.wav`）：
+3. **執行音訊發送端**（發送音訊至 ESP32/STM32 播放，預設將 `audio_test/test.wav` 傳送至 `172.20.10.3:5001`）：
    ```powershell
-   # <ESP32_IP> 請填入 ESP32 連接 Wi-Fi 後取得的 IP
-   python tools/aud1_tcp_sender.py --host <ESP32_IP>
+   python tools/aud1_tcp_sender.py
    ```
 
 
