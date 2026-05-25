@@ -110,6 +110,23 @@ graph TD
 2. 開啟 `wifi_config.h` 填入你的 Wi-Fi SSID、密碼與 PC Host IP。
 3. 使用 Arduino IDE 燒錄 `ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino` 至 ESP32。
 
+### PC 端測試工具部署與執行
+目前測試工具（位於 `tools/`）僅依賴 Python 3.9+ 的**標準函式庫**，無須安裝第三方套件。
+1. **建立虛擬環境**（選用，建議保持獨立環境）：
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   ```
+2. **執行錄音接收端**（接收 STM32 的麥克風音訊並存為 WAV）：
+   ```powershell
+   python tools/pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output received.wav
+   ```
+3. **執行音訊發送端**（將 PC 的音訊發送給 ESP32/STM32 播放）：
+   ```powershell
+   # <ESP32_IP> 請填入 ESP32 連接 Wi-Fi 後取得的 IP
+   python tools/aud1_tcp_sender.py --host <ESP32_IP> --port 5001 "audio_test/test.wav"
+   ```
+
 
 
 ## 目前使用的產品規格

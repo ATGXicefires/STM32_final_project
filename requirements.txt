@@ -1,0 +1,5 @@
+# Requirements for STM32 Final Project Python Tools
+# Currently, the tools (aud1_tcp_sender.py, pcm_tcp_receiver.py, wav_to_stm32_pcm.py)
+# use ONLY the Python standard library. No external pip packages are required.
+# 
+# Requires: Python 3.9 or higher
