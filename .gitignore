@@ -11,6 +11,8 @@
 Thumbs.db
 Desktop.ini
 ESP32_UART_Bridge_Test/wifi_config.h
+NIM_Assistant_F407/compile_commands.json
+*.launch
 
 # Audio test artifacts (keep one sample)
 audio_test/*.wav
