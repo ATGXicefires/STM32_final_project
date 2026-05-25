@@ -51,7 +51,7 @@ TTS_TEXT_LANG = "zh"
 
 # LLM Settings
 NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
-NIM_MODEL = "meta/llama-3.1-70b-instruct"
+NIM_MODEL = "google/gemma-4-31b-it"
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 # AUD1 Playback Pacing Settings
