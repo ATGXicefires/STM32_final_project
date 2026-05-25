@@ -591,6 +591,12 @@ static void Test_StartMicStreamRecord(void) {
     Test_SendUsbStatus("Mic record disabled: I2S DMA init failed\r\n");
     return;
   }
+  /* Drain any in-flight PCM packet before resetting TX state so the last
+     block of the previous recording reaches the ESP32 intact. Safe because
+     record_active==0 here, so the DMA ISR won't enqueue new data. */
+  while (Test_IsPcmTransmitBusy()) {
+    Test_ServicePcmTransmit();
+  }
   __disable_irq();
   Test_ResetAudStream();
   clip_playing = 0U;

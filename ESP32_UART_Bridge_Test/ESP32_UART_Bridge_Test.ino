@@ -67,6 +67,10 @@ static uint32_t pcmPayloadBytes = 0;
 static uint32_t pcmSeq = 0;
 static uint32_t pcmExpectedChecksum = 0;
 
+static WiFiClient pcmClient;
+static uint32_t pcmLastForwardMs = 0;
+static const uint32_t PCM_SESSION_TIMEOUT_MS = 3000;
+
 static WiFiServer audServer(AUD_LISTEN_PORT);
 static WiFiClient audClient;
 static bool audServerStarted = false;
@@ -129,35 +133,47 @@ static void connectWifiIfNeeded() {
 static bool writeAll(WiFiClient &client, const uint8_t *buffer, uint32_t length);
 static bool writeAllUart(const uint8_t *buffer, uint32_t length);
 
+static bool ensurePcmClient() {
+  if (pcmClient.connected()) {
+    return true;
+  }
+  if (pcmClient) {
+    pcmClient.stop();
+  }
+  connectWifiIfNeeded();
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("ESP32: WiFi offline, skip TCP forward");
+    return false;
+  }
+  if (!pcmClient.connect(PC_HOST, PC_PORT)) {
+    Serial.println("ESP32: PCM TCP connect failed");
+    return false;
+  }
+  Serial.println("ESP32: PCM TCP session opened");
+  return true;
+}
+
 static bool forwardPcmToPc() {
   if (!wifiConfigured()) {
     Serial.println("ESP32: WiFi not configured, skip TCP forward");
     return false;
   }
 
-  connectWifiIfNeeded();
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("ESP32: WiFi offline, skip TCP forward");
-    return false;
-  }
-
-  WiFiClient client;
-  if (!client.connect(PC_HOST, PC_PORT)) {
-    Serial.println("ESP32: TCP connect failed");
+  if (!ensurePcmClient()) {
     return false;
   }
 
   uint8_t header[24];
   memcpy(header, PCM_MAGIC, 4);
   memcpy(header + 4, pcmHeader, PCM_HEADER_REMAINING_BYTES);
-  if (!writeAll(client, header, sizeof(header)) ||
-      !writeAll(client, pcmPayload, pcmPayloadBytes)) {
+  if (!writeAll(pcmClient, header, sizeof(header)) ||
+      !writeAll(pcmClient, pcmPayload, pcmPayloadBytes)) {
     Serial.println("ESP32: TCP write failed");
-    client.stop();
+    pcmClient.stop();
     return false;
   }
-  client.stop();
 
+  pcmLastForwardMs = millis();
   Serial.print("ESP32: TCP forwarded bytes=");
   Serial.println(pcmPayloadBytes);
   return true;
@@ -543,6 +559,11 @@ void setup() {
 void loop() {
   startAudServerIfNeeded();
   handleAudTcpClient();
+
+  if (pcmClient.connected() && (millis() - pcmLastForwardMs > PCM_SESSION_TIMEOUT_MS)) {
+    Serial.println("ESP32: PCM TCP session timeout, closing");
+    pcmClient.stop();
+  }
 
   while (Serial2.available() > 0) {
     handleStm32Byte((uint8_t)Serial2.read());

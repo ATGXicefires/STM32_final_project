@@ -5,13 +5,13 @@ Display paths are shown from the repo root; link targets are relative to this fi
 
 ## Core application
 
-- Parameters and buffers: [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L38-L61) and [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L144-L145)
-- Main flow and button logic: init in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1033-L1088), loop in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1126-L1146)
-- I2S DMA audio pipeline: start in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L656), processing in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L807), callbacks in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1006-L1018), diagnostics in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L926)
-- Recording and playback control: clip in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L552), mic record in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L573)
-- UART/ESP32 + AUD/PCM protocol: UART DMA start in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L239), UART parse in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L252), AUD service in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L515), PCM TX in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L741)
-- DMA/IRQ wiring: DMA init in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1233), IRQ handlers in [NIM_Assistant_F407/Core/Src/stm32f4xx_it.c](../NIM_Assistant_F407/Core/Src/stm32f4xx_it.c#L207-L249)
-- MSP init (I2S/UART): [NIM_Assistant_F407/Core/Src/stm32f4xx_hal_msp.c](../NIM_Assistant_F407/Core/Src/stm32f4xx_hal_msp.c#L89-L201)
+- Parameters and buffers: [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L38-L68) and [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L155-L160)
+- Main flow and button logic: init in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1050-L1106), loop and button logic in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1110-L1161)
+- I2S DMA audio pipeline: start in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L664), processing in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L821-L935), callbacks in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1023-L1036), diagnostics in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L943-L1015)
+- Recording and playback control: clip in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L564), mic record in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L589)
+- UART/ESP32 + AUD/PCM protocol: UART DMA start in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L251), UART parse in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L264), AUD service in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L527), PCM TX in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L749)
+- DMA/IRQ wiring: DMA init in [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L1252), IRQ handlers in [NIM_Assistant_F407/Core/Src/stm32f4xx_it.c](../NIM_Assistant_F407/Core/Src/stm32f4xx_it.c#L207-L249)
+- MSP init (I2S/UART): [NIM_Assistant_F407/Core/Src/stm32f4xx_hal_msp.c](../NIM_Assistant_F407/Core/Src/stm32f4xx_hal_msp.c#L89-L255)
 
 ## USB CDC
 

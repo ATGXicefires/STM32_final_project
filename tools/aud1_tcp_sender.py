@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import argparse
-import audioop
+import math
+import select
 import socket
 import struct
 import time
@@ -17,11 +18,11 @@ AUD_SAMPLE_RATE = 16000
 AUD_BYTES_PER_SAMPLE = 2
 AUD_BYTE_RATE = AUD_SAMPLE_RATE * AUD_BYTES_PER_SAMPLE
 
-
 DEFAULT_WAV_FILE = "audio_test/03 春を待つ (feat. 倚水).wav"
 DEFAULT_ESP32_HOST = "172.20.10.3"
 DEFAULT_ESP32_PORT = 5001
 DEFAULT_PREBUFFER_BYTES = 8192
+DEFAULT_WINDOW_BYTES = 24576  # 24 KB in-flight limit; fills STM32's 64 KB ring buffer
 
 
 def load_wav_as_pcm(path: Path) -> bytes:
@@ -30,79 +31,109 @@ def load_wav_as_pcm(path: Path) -> bytes:
         sample_width = wav_file.getsampwidth()
         sample_rate = wav_file.getframerate()
         frame_count = wav_file.getnframes()
-        pcm = wav_file.readframes(frame_count)
+        raw = wav_file.readframes(frame_count)
 
-    if channels < 1:
-        raise ValueError("WAV must have at least one channel")
+    if channels < 1 or channels > 2:
+        raise ValueError(f"Only mono or stereo WAV supported, got {channels} channels")
 
-    if channels > 1:
-        weights = [1.0 / channels] * channels
-        if channels == 2:
-            pcm = audioop.tomono(pcm, sample_width, weights[0], weights[1])
-        else:
-            raise ValueError("Only mono or stereo WAV files are supported")
+    n = frame_count * channels
+    if sample_width == 1:
+        interleaved = [(b - 128) << 8 for b in raw]
+    elif sample_width == 2:
+        interleaved = list(struct.unpack(f"<{n}h", raw))
+    elif sample_width == 3:
+        interleaved = [int.from_bytes(raw[i:i + 3], "little", signed=True) >> 8
+                       for i in range(0, len(raw), 3)]
+    elif sample_width == 4:
+        interleaved = [v >> 16 for v in struct.unpack(f"<{n}i", raw)]
+    else:
+        raise ValueError(f"Unsupported sample width: {sample_width} byte(s)")
+
+    if channels == 2:
+        mono = [(interleaved[i] + interleaved[i + 1]) // 2
+                for i in range(0, len(interleaved), 2)]
+    else:
+        mono = interleaved
 
     if sample_rate != AUD_SAMPLE_RATE:
-        pcm, _state = audioop.ratecv(pcm, sample_width, 1, sample_rate, AUD_SAMPLE_RATE, None)
+        ratio = sample_rate / AUD_SAMPLE_RATE
+        output_len = int(round(len(mono) * AUD_SAMPLE_RATE / sample_rate))
+        resampled: list[int] = []
+        for i in range(output_len):
+            pos = i * ratio
+            base = int(math.floor(pos))
+            frac = pos - base
+            if base >= len(mono) - 1:
+                resampled.append(mono[-1])
+            else:
+                resampled.append(int(round(mono[base] * (1.0 - frac) + mono[base + 1] * frac)))
+        mono = resampled
 
-    if sample_width != AUD_BYTES_PER_SAMPLE:
-        pcm = audioop.lin2lin(pcm, sample_width, AUD_BYTES_PER_SAMPLE)
-
-    if len(pcm) % AUD_BYTES_PER_SAMPLE != 0:
-        pcm = pcm[:-1]
-
-    return pcm
+    return struct.pack(f"<{len(mono)}h", *(max(-32768, min(32767, s)) for s in mono))
 
 
 def checksum_bytes(payload: bytes) -> int:
     return sum(payload) & 0xFFFFFFFF
 
 
-def read_ack_line(sock_file) -> tuple[str, int]:
-    line = sock_file.readline()
-    if not line:
-        raise ConnectionError("ESP32 closed the connection while waiting for ACK")
+class _AckStream:
+    """Line reader that supports non-blocking drain via select, avoiding sock_file buffering."""
 
-    text = line.decode("ascii", errors="replace").strip()
+    def __init__(self, sock: socket.socket) -> None:
+        self._sock = sock
+        self._buf = bytearray()
+
+    def _fill(self, timeout: float) -> None:
+        r, _, _ = select.select([self._sock], [], [], timeout)
+        if r:
+            data = self._sock.recv(4096)
+            if not data:
+                raise ConnectionError("ESP32 closed connection")
+            self._buf.extend(data)
+
+    def _pop_line(self) -> str | None:
+        if b"\n" not in self._buf:
+            return None
+        idx = self._buf.index(b"\n")
+        line = bytes(self._buf[: idx + 1])
+        del self._buf[: idx + 1]
+        return line.decode("ascii", errors="replace").strip()
+
+    def read_line(self, timeout: float = 10.0) -> str:
+        deadline = time.monotonic() + timeout
+        while True:
+            line = self._pop_line()
+            if line is not None:
+                return line
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("timed out waiting for ESP32 response")
+            self._fill(min(remaining, 1.0))
+
+    def drain(self) -> list[str]:
+        """Return all immediately-available lines without blocking."""
+        self._fill(0.0)
+        lines: list[str] = []
+        while True:
+            line = self._pop_line()
+            if line is None:
+                break
+            lines.append(line)
+        return lines
+
+
+def _parse_ack(text: str) -> tuple[str, int]:
     parts = text.split()
     if len(parts) != 2:
-        raise ValueError(f"bad ACK line: {text!r}")
-
+        raise ValueError(f"unexpected ESP32 line: {text!r}")
     tag = parts[0]
     try:
-        value = int(parts[1], 10)
+        val = int(parts[1], 10)
     except ValueError as exc:
-        raise ValueError(f"bad ACK value: {text!r}") from exc
-
+        raise ValueError(f"bad value in ESP32 line: {text!r}") from exc
     if tag == "AUDERR":
-        raise RuntimeError(f"ESP32 reported AUDERR {value}")
-
-    return tag, value
-
-
-def wait_for_header_ack(sock_file, seq: int) -> None:
-    tag, value = read_ack_line(sock_file)
-    if (tag != "AUDHOK") or (value != seq):
-        raise RuntimeError(f"expected AUDHOK {seq}, got {tag} {value}")
-
-
-def wait_for_payload_ack(sock_file, expected_bytes: int) -> None:
-    while True:
-        tag, value = read_ack_line(sock_file)
-        if (tag == "AUDACK") and (value >= expected_bytes):
-            return
-        if tag == "AUDDONE":
-            raise RuntimeError(f"AUDDONE arrived before AUDACK {expected_bytes}")
-
-
-def wait_for_done(sock_file, seq: int) -> None:
-    while True:
-        tag, value = read_ack_line(sock_file)
-        if (tag == "AUDDONE") and (value == seq):
-            return
-        if tag == "AUDACK":
-            continue
-        raise RuntimeError(f"expected AUDDONE {seq}, got {tag} {value}")
+        raise RuntimeError(f"ESP32 reported AUDERR {val}")
+    return tag, val
 
 
 def send_aud1(
@@ -112,6 +143,7 @@ def send_aud1(
     seq: int,
     prebuffer_bytes: int,
     chunk_bytes: int,
+    window_bytes: int,
 ) -> None:
     payload = load_wav_as_pcm(wav_path)
     sample_count = len(payload) // AUD_BYTES_PER_SAMPLE
@@ -133,30 +165,51 @@ def send_aud1(
 
     with socket.create_connection((host, port), timeout=10.0) as sock:
         sock.settimeout(10.0)
-        sock_file = sock.makefile("rb")
+        acks = _AckStream(sock)
         sock.sendall(header)
-        wait_for_header_ack(sock_file, seq)
+
+        tag, val = _parse_ack(acks.read_line())
+        if tag != "AUDHOK" or val != seq:
+            raise RuntimeError(f"expected AUDHOK {seq}, got {tag} {val}")
 
         sent = 0
+        acked = 0
         prebuffer = min(prebuffer_bytes, len(payload))
-        if prebuffer > 0:
-            sock.sendall(payload[:prebuffer])
-            sent = prebuffer
-            wait_for_payload_ack(sock_file, sent)
+        stream_start: float | None = None
 
-        stream_start = time.monotonic()
         while sent < len(payload):
+            # Drain any ACKs that arrived since last iteration (non-blocking)
+            for line in acks.drain():
+                tag, val = _parse_ack(line)
+                if tag == "AUDACK":
+                    acked = max(acked, val)
+
+            # If window is full, block until we receive a new ACK
+            while (sent - acked) >= window_bytes:
+                tag, val = _parse_ack(acks.read_line())
+                if tag == "AUDACK":
+                    acked = max(acked, val)
+
             end = min(sent + chunk_bytes, len(payload))
             sock.sendall(payload[sent:end])
             sent = end
-            wait_for_payload_ack(sock_file, sent)
 
-            target_elapsed = max(0.0, (sent - prebuffer) / AUD_BYTE_RATE)
-            sleep_for = (stream_start + target_elapsed) - time.monotonic()
-            if sleep_for > 0:
-                time.sleep(sleep_for)
+            # Rate-limit to audio playback speed after the initial prebuffer burst
+            if sent > prebuffer:
+                if stream_start is None:
+                    stream_start = time.monotonic()
+                target_elapsed = max(0.0, (sent - prebuffer) / AUD_BYTE_RATE)
+                sleep_for = stream_start + target_elapsed - time.monotonic()
+                if sleep_for > 0:
+                    time.sleep(sleep_for)
 
-        wait_for_done(sock_file, seq)
+        # Drain remaining ACKs and wait for AUDDONE
+        while True:
+            tag, val = _parse_ack(acks.read_line(timeout=30.0))
+            if tag == "AUDDONE" and val == seq:
+                break
+            if tag == "AUDACK":
+                acked = max(acked, val)
 
     print(f"AUD1 sent complete seq={seq} bytes={len(payload)}")
 
@@ -179,13 +232,19 @@ def parse_args() -> argparse.Namespace:
         "--prebuffer-bytes",
         type=int,
         default=DEFAULT_PREBUFFER_BYTES,
-        help="Payload bytes to send before paced chunks",
+        help="Payload bytes to send before rate-limiting kicks in (default: 8192)",
     )
     parser.add_argument(
         "--chunk-bytes",
         type=int,
         default=1024,
-        help="Payload bytes per ACK-paced chunk",
+        help="Payload bytes per send call (default: 1024)",
+    )
+    parser.add_argument(
+        "--window-bytes",
+        type=int,
+        default=DEFAULT_WINDOW_BYTES,
+        help="Max in-flight unacknowledged bytes; must be <= STM32 ring buffer (64 KB) (default: 24576)",
     )
     return parser.parse_args()
 
@@ -199,6 +258,7 @@ def main() -> None:
         seq=args.seq,
         prebuffer_bytes=args.prebuffer_bytes,
         chunk_bytes=args.chunk_bytes,
+        window_bytes=args.window_bytes,
     )
 
 

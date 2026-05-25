@@ -66,5 +66,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## others
 
-Python專案請務必在虛擬環境``.venv``執行
-對話均使用繁體中文進行交流
+- Python專案請務必在虛擬環境``.venv``執行
+- 對話均使用繁體中文進行交流
+- 尋找資料時先查閱根目錄或 `docs/` 下的 `.md` 檔案
+- 完整完成任務後，須更新相關的 `.md` 檔案
+- 若遇到無法解決的問題，應優先詳細記錄已嘗試的解決過程

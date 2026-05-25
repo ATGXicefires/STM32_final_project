@@ -53,7 +53,12 @@ def receive_packets(
     timeout: float,
     initial_timeout: float,
 ) -> None:
-    """Accept PCM1 connections until timeout, concatenate payloads, save WAV."""
+    """Accept PCM1 connections until timeout, concatenate payloads, save WAV.
+
+    Supports both the legacy one-frame-per-connection model and the newer
+    persistent-connection model where the ESP32 sends multiple frames on the
+    same TCP socket and closes it when the recording session ends.
+    """
     all_payloads: list[bytes] = []
     sample_rate = 0
 
@@ -73,31 +78,41 @@ def receive_packets(
 
             with conn:
                 print(f"Connected from {addr[0]}:{addr[1]}")
-                header = read_exact(conn, HEADER_SIZE)
+                conn.settimeout(timeout)
+                while True:
+                    try:
+                        header = read_exact(conn, HEADER_SIZE)
+                    except (ConnectionError, OSError):
+                        break  # clean EOF or inter-frame timeout → session ended
 
-                if header[:4] != MAGIC:
-                    print(f"  bad magic: {header[:4]!r}, skipping")
-                    continue
+                    if header[:4] != MAGIC:
+                        print(f"  bad magic: {header[:4]!r}, closing connection")
+                        break
 
-                sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
-                    struct.unpack("<IIIII", header[4:])
-                )
-                payload = read_exact(conn, payload_bytes)
-                actual_checksum = sum(payload) & 0xFFFFFFFF
-
-                if actual_checksum != expected_checksum:
-                    print(
-                        f"  checksum mismatch seq={seq} "
-                        f"actual={actual_checksum} expected={expected_checksum}, skipping"
+                    sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
+                        struct.unpack("<IIIII", header[4:])
                     )
-                    continue
+                    try:
+                        payload = read_exact(conn, payload_bytes)
+                    except (ConnectionError, OSError):
+                        print(f"  seq={seq}: connection lost mid-payload, skipping")
+                        break
 
-                print(
-                    f"  seq={seq} rate={sample_rate_v} samples={sample_count} "
-                    f"bytes={payload_bytes} checksum=OK"
-                )
-                all_payloads.append(payload)
-                sample_rate = sample_rate_v
+                    actual_checksum = sum(payload) & 0xFFFFFFFF
+
+                    if actual_checksum != expected_checksum:
+                        print(
+                            f"  checksum mismatch seq={seq} "
+                            f"actual={actual_checksum} expected={expected_checksum}, skipping"
+                        )
+                        continue
+
+                    print(
+                        f"  seq={seq} rate={sample_rate_v} samples={sample_count} "
+                        f"bytes={payload_bytes} checksum=OK"
+                    )
+                    all_payloads.append(payload)
+                    sample_rate = sample_rate_v
 
     if not all_payloads:
         print("No valid packets received")

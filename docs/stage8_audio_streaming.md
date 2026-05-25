@@ -1,12 +1,12 @@
 # Stage 8 Audio Streaming Status
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 ## Current Status
 
 Stage 8 is complete.
 
-- `PCM1` path: K1 hold-to-record streaming. While K1 is held, STM32 continuously fills 0.5-second double-buffers (8000 samples each) and enqueues each completed buffer to a 2-slot PCM TX queue over USART1. ESP32 receives each PCM1 frame and forwards it to the PC TCP receiver over a new TCP connection. On K1 release, any partial buffer (actual recorded samples, no zero padding) is also queued and sent. PC side concatenates all frames into a single WAV.
+- `PCM1` path: K1 hold-to-record streaming. While K1 is held, STM32 continuously fills 0.5-second double-buffers (8000 samples each) and enqueues each completed buffer to a 2-slot PCM TX queue over USART1. ESP32 receives each PCM1 frame and forwards it to the PC TCP receiver over a **persistent TCP session** (one connection per K1 session, not per frame). On K1 release, any partial buffer (actual recorded samples, no zero padding) is also queued and sent. PC side concatenates all frames into a single WAV.
 - `AUD1` path: PC sender converts a WAV file to 16 kHz mono signed 16-bit PCM, sends one fixed-length `AUD1` frame to ESP32 TCP port `5001`, ESP32 ACKs and forwards chunks to STM32 over `Serial2`, and STM32 plays through MAX98357A from a 64 KB ring buffer.
 
 ## Hardware Wiring
@@ -39,7 +39,7 @@ ESP32 bridge wiring:
 
 - Use the project `.venv` for Stage 8 test tools.
 - In the Codex sandbox, `.venv\Scripts\python.exe` may require elevated execution; if it works after elevation, do not rebuild the venv just because the sandbox launch failed.
-- System Python 3.14+ is not a valid substitute for `tools/aud1_tcp_sender.py` yet, because that script currently imports the removed `audioop` module for WAV conversion.
+- `tools/aud1_tcp_sender.py` uses only stdlib (`wave`, `struct`, `math`, `select`) — no `audioop` dependency. It runs on Python 3.9+ including Python 3.13+.
 - `tools\pcm_tcp_receiver.py` can run on newer Python, but keep both receiver and sender on the same `.venv` during acceptance tests to avoid environment drift.
 
 ## Protocols
@@ -77,7 +77,7 @@ ESP32 sends simple ASCII ACK lines back to the PC TCP sender:
 - `AUDDONE <seq>` after ESP32 has forwarded the full payload to STM32 UART and closed the TCP client.
 - `AUDERR <code>` when ESP32 rejects the header or cannot continue forwarding.
 
-`tools\aud1_tcp_sender.py` waits for these ACKs. It treats `AUDERR` as failure, waits for `AUDHOK` before payload, waits for each `AUDACK` threshold while sending payload, and waits for final `AUDDONE` before printing completion.
+`tools\aud1_tcp_sender.py` processes these ACKs with a **sliding window** flow control model. It waits for `AUDHOK` before sending payload, then sends chunks freely while keeping in-flight unacknowledged bytes below `--window-bytes` (default 24 KB). `AUDACK` lines are drained non-blockingly via `select`; the sender only blocks when the window is full. It waits for `AUDDONE` to confirm full delivery, and treats `AUDERR` as failure.
 
 ## Playback Buffering
 
@@ -86,8 +86,8 @@ ESP32 sends simple ASCII ACK lines back to the PC TCP sender:
 - Playback starts after 8 KB prebuffer or after a short payload is fully received.
 - ESP32 UART2 RX buffer is 32 KB (`Serial2.setRxBufferSize(32768)`) to absorb the 16 KB PCM1 payload while a TCP connection is being established for the previous frame.
 - ESP32 forwards TCP data to UART in 256-byte UART writes.
-- PC sender sends an 8 KB prebuffer by default, waits for an `AUDACK`, then sends 1024-byte ACK-paced chunks.
-- Sender pacing targets real-time 16 kHz 16-bit mono playback after the prebuffer. The defaults can be tuned with `--prebuffer-bytes` and `--chunk-bytes`.
+- PC sender uses a sliding window (default 24 KB) to keep STM32's ring buffer filled. The first 8 KB (prebuffer) is sent in a burst before rate-limiting begins; subsequent chunks pace at real-time 16 kHz 16-bit mono (32 KB/s). The 24 KB window provides approximately 750 ms of Wi-Fi jitter protection at any point in the stream.
+- Sender pacing defaults can be tuned with `--prebuffer-bytes`, `--chunk-bytes`, and `--window-bytes`.
 - STM32 writes AUD1 payload into the ring buffer as complete 16-bit sample pairs.
 - On underrun, STM32 decays the last sample toward zero instead of hard-switching to zero, reducing audible pops from discontinuities.
 
@@ -105,7 +105,7 @@ Send the built-in default WAV file to ESP32 for playback:
 .\.venv\Scripts\python.exe tools\aud1_tcp_sender.py
 ```
 
-The sender currently has default playback settings built in: default WAV path, ESP32 host `172.20.10.3`, TCP port `5001`, sequence `1`, 8 KB prebuffer, and 1024-byte paced chunks.
+The sender currently has default playback settings built in: default WAV path, ESP32 host `172.20.10.3`, TCP port `5001`, sequence `1`, 8 KB prebuffer, 1024-byte chunks, and a 24 KB sliding window.
 
 Only pass extra arguments when overriding the built-in defaults, for example:
 
@@ -119,8 +119,9 @@ When a WAV path is provided, the sender accepts mono or stereo WAV and converts 
 Useful sender controls:
 
 - `--seq <n>` changes the debug sequence number shown in ESP32 and STM32 logs.
-- `--prebuffer-bytes <n>` changes how much payload is sent before real-time pacing starts.
-- `--chunk-bytes <n>` changes each ACK-paced payload chunk size.
+- `--prebuffer-bytes <n>` changes how much payload is sent in a burst before real-time pacing starts (default: 8192).
+- `--chunk-bytes <n>` changes the payload bytes per send call (default: 1024).
+- `--window-bytes <n>` changes the sliding window size — max in-flight unacknowledged bytes (default: 24576; must not exceed STM32 ring buffer 65536).
 
 ## Debug Reference
 
@@ -143,3 +144,7 @@ Interpretation:
 - A 5-30 second `AUD1` WAV plays without sustained underrun or overflow. ✓
 - Three consecutive short `AUD1` files reset state and play normally. ✓
 - ESP32 PCM1 UART RX overrun resolved (32 KB RX buffer). ✓
+- `audioop` dependency removed; `aud1_tcp_sender.py` runs on Python 3.13+. ✓
+- ESP32 PCM1 TCP uses a persistent session per K1 recording (no per-frame handshake overhead). ✓
+- STM32 K1 rapid press: in-flight PCM packet drained before TX state reset (no WAV truncation). ✓
+- AUD1 sender uses sliding window (24 KB default) for 750 ms Wi-Fi jitter protection. ✓
