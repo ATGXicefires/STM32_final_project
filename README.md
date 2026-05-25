@@ -4,15 +4,14 @@
 
 ## 目前狀態
 
-- Stage 1-7 已完成：GPIO、按鍵、USART1、ESP32 PING/PONG、MAX98357A 播放、ICS43434 I2S 收音、audio capture/playback validation。
-- Stage 8 目前已打通雙向音訊資料路徑：K1 錄音會以 `PCM1` 封包走 STM32 -> ESP32 -> PC；PC 也可用 `AUD1` 固定長度封包走 PC -> ESP32 -> STM32 -> MAX98357A 播放長音樂片段。
-- Stage 8 目前是 functional/stabilizing：長音樂可正常播放，USART1/ESP32 Serial2 已升到 `921600 8N1`，STM32 使用 USART1 RX DMA circular buffer 與 64 KB playback ring buffer；偶發爆音仍需用 `AUD level`、`underrun`、`overflow` log 追蹤。
-- Stage 7 結果：K0 播放 Koharu login 測試語音（由 `audio_test/BA_V_Koharu_Login_1.ogg` 解碼到 `audio_test/test.wav` 後嵌入）正常；K1 會先錄 0.5 秒麥克風資料，再回放，語音已可辨識。
-- 錄音路徑含 I2S DMA、IIR low-pass filter（alpha≈1/8）、noise gate（±80）、DC removal 與 invalid sample decay；OVR 已降到不再阻塞下一階段。
-- 目前麥克風有效資料在 left channel；live mic-to-speaker loopback 非必要產品功能，維持關閉作為安全設定。
-- 下一步是 Stage 8 穩定化驗收：依序測 K0、K1 本機回放、`PCM1` 錄音回 PC、5-30 秒 `AUD1` 播放與三個短檔連續播放；通過後再進 Stage 9 的 ASR/NIM/TTS。
+- Stage 1-8 已完成：GPIO、按鍵、USART1 (921600 8N1)、ESP32 雙向通訊、MAX98357A I2S 播放、ICS43434 I2S 收音。
+- Stage 8 雙向音訊串流已全鏈路打通且完成穩定化驗收：
+  - **PCM1（錄音上傳）**：按住 K1 時，STM32 以 0.5 秒雙緩衝區透過 2-slot 佇列送往 ESP32，ESP32 透過**持久 TCP 連線**即時上傳 PC 並儲存成 WAV，錄音長度與按鍵時間精確對齊。
+  - **AUD1（音訊播放）**：PC 端使用 **Sliding Window 流量控制 (24 KB)** 將 WAV 串流經 ESP32 送達 STM32 的 64 KB Ring Buffer。STM32 使用 USART1 RX DMA 環形緩衝與音訊未達時的淡出衰減機制，大幅消除爆音，支援長音樂流暢播放。
+- 下一步是 Stage 9：PC 端 server 銜接 ASR / NVIDIA NIM / TTS，將雙向音訊傳輸轉化為完整語音助理對話環路。
 
 詳細進度請看 [progress.md](progress.md)，開發與燒錄流程請看 [process.md](process.md)。
+
 
 ## 系統架構
 
@@ -105,6 +104,11 @@ graph TD
 4. 執行 [NIM_Assistant_F407/flash_usb.bat](NIM_Assistant_F407/flash_usb.bat) 燒錄。
 5. 燒錄完成後 BOOT0 接回 GND，按 Reset，從 USB CDC 或 USB-TTL 觀察 log。
 
+## 本地設定與排除敏感檔案
+
+- **Wi-Fi 設定**：ESP32 的網路與主機設定已從 Git 排除。本地開發時，請複製 [ESP32_UART_Bridge_Test/wifi_config.example.h](ESP32_UART_Bridge_Test/wifi_config.example.h) 並命名為 `wifi_config.h`，然後填入你本地的 Wi-Fi SSID、密碼與 PC Host IP。
+- **本地環境排除**：`compile_commands.json`（C++ 語言伺服器產物）與 `*.launch`（IDE 偵錯啟動檔）因為含有本地絕對路徑，已設定忽略且移出 Git 追蹤，以防止環境路徑外洩並確保跨機器開發的相容性。
+
 ## 目前使用的產品規格
 
 | 品名 | 型號/規格 |
@@ -114,3 +118,4 @@ graph TD
 | 音訊模組 | ICS43434 + MAX98357A |
 | 喇叭 | 4 ohm 3W 40mm |
 | 顯示螢幕 | 0.96 inch OLED, SPI |
+

@@ -46,18 +46,22 @@
   - `LOOPBACK_SPEAKER_ENABLE 0U`，不把 MIC 即時送到 MAX98357A；live loopback 非必要產品功能，只保留為診斷/延後項目。
   - `RECORD_TEST_TONE` 可切換為 400Hz 三角波測試。
 
+- Stage 8: ESP32 audio streaming
+    - `PCM1`：K1 按住期間以 0.5 秒分段將錄音以 PCM1 封包（含魔術字、序號、長度與校驗和）傳送，並由 ESP32 TCP 持久連線轉發至 PC 拼接。
+    - `AUD1`：PC 使用 Sliding Window 流量控制（24 KB）將 WAV 串流經 ESP32 TCP 伺服器傳送，STM32 搭配 64 KB Ring Buffer 與淡出機制，流暢播放長音樂。
+    - 串流穩定性通過驗收，爆音問題已由淡出修正解決，ESP32 32 KB 緩衝區防溢出亦驗證成功。
+
 ### Current
 
-- Stage 8: ESP32 audio streaming
-  - `PCM1`：K1 錄完 0.5 秒後，把 `record_buffer` 以固定長度封包從 STM32 經 ESP32 TCP forward 到 PC。
-  - `AUD1`：PC sender 把 16 kHz mono signed 16-bit WAV 轉成固定長度 PCM frame，經 ESP32 TCP server 轉 USART1 給 STM32 播放。
-  - USART1 / ESP32 Serial2 目前為 `921600 8N1`，STM32 USART1 RX 使用 DMA circular buffer。
-  - STM32 播放端使用 64 KB ring buffer，8 KB prebuffer，I2S DMA callback 從 ring 取樣；空 buffer 以短衰減補樣並記錄 underrun。
-  - 長音樂已可正常播放；目前主要工作是追偶發爆音是否對應 `underrun`、`overflow`、Wi-Fi jitter 或硬體雜訊。
+- Stage 9: ASR -> NIM -> TTS -> playback
+  - 建立 PC 端整合服務，接收 STM32 K1 錄音的 `PCM1` WAV 檔。
+  - 將 WAV 輸入 ASR（如 Whisper）轉為文字。
+  - 輸入 NVIDIA NIM 進行大語言模型對話。
+  - 大模型輸出文字輸入 TTS 產生 16 kHz Mono WAV。
+  - 將 TTS 語音透過 `AUD1` 主動推送回 STM32 播放，完成閉環對話。
 
 ### Remaining
 
-- Stage 9: ASR -> NIM -> TTS -> playback
 - Stage 10: OLED and UI status
 - Stage 11: Stability test and final report
 

@@ -1,6 +1,6 @@
 # STM32 Final Project Progress
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
