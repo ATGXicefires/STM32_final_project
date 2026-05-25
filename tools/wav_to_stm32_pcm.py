@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+"""Convert a WAV file to an STM32 int16_t PCM C header.
+
+Reads a WAV file, converts to mono 16-bit PCM, optionally resamples,
+applies gain, and writes a .h file with a static const int16_t array.
+"""
+
+from __future__ import annotations
+
 import argparse
 import math
 import struct
@@ -69,15 +78,18 @@ def write_header(
         handle.write("#endif\n")
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Convert WAV to STM32 int16 PCM header.")
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("--symbol", default="audio_clip")
     parser.add_argument("--rate", type=int, default=16000)
     parser.add_argument("--gain", type=float, default=0.35)
-    args = parser.parse_args()
+    return parser.parse_args()
 
+
+def main() -> None:
+    args = parse_args()
     source_rate, samples = read_wav_mono_16(args.input)
     samples = resample_linear(samples, source_rate, args.rate)
     scaled = [max(-32768, min(32767, int(round(sample * args.gain)))) for sample in samples]

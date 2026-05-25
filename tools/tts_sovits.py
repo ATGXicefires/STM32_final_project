@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
-import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -57,22 +57,21 @@ class SoVITSClient:
                 if response.status != 200:
                     print(f"[ERROR] TTS API server returned status: {response.status}")
                     return False
-                
+
                 audio_data = response.read()
-                
+
             out_file = Path(output_path)
             out_file.parent.mkdir(parents=True, exist_ok=True)
             out_file.write_bytes(audio_data)
-            
+
             print(f"[TTS] Saved synthesized audio to: {out_file} ({len(audio_data)} bytes)")
             return True
 
-        except Exception as e:
+        except (urllib.error.URLError, OSError) as e:
             print(f"[ERROR] Failed to connect or receive from TTS server: {e}")
             return False
 
 
-# Singleton TTS client instance
 _client: SoVITSClient | None = None
 
 

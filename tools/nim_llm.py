@@ -58,7 +58,6 @@ class NIMLLMEngine:
             reply = ""
         reply = reply.strip()
 
-        # Update local session memory
         self.history.append({"role": "user", "content": user_text})
         self.history.append({"role": "assistant", "content": reply})
 
@@ -69,7 +68,6 @@ class NIMLLMEngine:
         self.history.clear()
 
 
-# Singleton LLM instance
 _engine: NIMLLMEngine | None = None
 
 

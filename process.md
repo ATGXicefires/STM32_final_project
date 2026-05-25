@@ -4,7 +4,6 @@
 
 ## Daily Development Flow
 
-(給 AI 參考 : STM32CubeIDE 裝在 D槽)
 1. 修改 STM32 firmware 或 ESP32 bridge。
 2. 在 STM32CubeIDE 按 `Ctrl+B` 編譯 STM32 專案。
 3. 確認產物存在：`NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`。

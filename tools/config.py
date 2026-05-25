@@ -1,9 +1,14 @@
+"""Project-wide configuration constants for the STM32 voice assistant.
+
+Loads secrets from a .env file in the project root, then exposes all
+network, ASR, TTS, LLM, and AUD1 settings as module-level constants.
+"""
+
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-# Paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 TOOLS_DIR = BASE_DIR / "tools"
 AUDIO_TEST_DIR = BASE_DIR / "audio_test"
@@ -13,7 +18,6 @@ MODELS_DIR = BASE_DIR / "models"
 os.environ["HF_HOME"] = str(MODELS_DIR)
 
 
-# Helper function to load local env variables from .env if present
 def load_env() -> None:
     env_path = BASE_DIR / ".env"
     if env_path.exists():
@@ -27,40 +31,33 @@ def load_env() -> None:
                     os.environ[key.strip()] = val
 
 
-# Load secrets from .env file
 load_env()
 
-# Network Settings
 ESP32_HOST = "172.20.10.3"
 AUD1_PORT = 5001
 PCM1_PORT = 5000
 
-# ASR Settings
 ASR_MODEL_SIZE = "large-v3"
 ASR_DEVICE = "cuda"
 ASR_COMPUTE_TYPE = "float16"
 ASR_LANGUAGE = "zh"
 ASR_INITIAL_PROMPT = "以下是繁體中文的語音助理對話。"
 
-# GPT-SoVITS TTS Settings
 TTS_API_URL = "http://127.0.0.1:9880/tts"
 TTS_REF_AUDIO = str(AUDIO_TEST_DIR / "test.wav")
 TTS_PROMPT_TEXT = "你好。"
 TTS_PROMPT_LANG = "zh"
 TTS_TEXT_LANG = "zh"
 
-# LLM Settings
 NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NIM_MODEL = "google/gemma-4-31b-it"
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
-# AUD1 Playback Pacing Settings
 AUD1_SEQ = 99
 AUD1_PREBUFFER_BYTES = 8192
 AUD1_CHUNK_BYTES = 1024
-AUD1_WINDOW_BYTES = 24576
+AUD1_WINDOW_BYTES = 24576  # 24 KB in-flight limit; fills STM32's 64 KB ring buffer
 
-# System Prompt
 SYSTEM_PROMPT = (
     "你是一個部署在嵌入式系統（STM32）上的智慧語音助理，名叫 NIM-Assistant。\n"
     "你的回答必須符合以下規則：\n"

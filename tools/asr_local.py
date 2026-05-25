@@ -96,7 +96,6 @@ class LocalASREngine:
         return full_text, elapsed
 
 
-# Singleton engine instance
 _engine: LocalASREngine | None = None
 
 

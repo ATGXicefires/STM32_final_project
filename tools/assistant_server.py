@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Assistant Server Coordinator.
 
 Integrates PCM1 audio capture, ASR, LLM, TTS, and AUD1 playback
@@ -54,7 +55,6 @@ def run_pipeline(
     print("STARTING DIALOGUE PIPELINE")
     print("=" * 50)
 
-    # 1. ASR (Speech-to-Text)
     try:
         print("[ASR] Running transcription...")
         text, elapsed = asr_local.transcribe_audio(wav_path)
@@ -66,7 +66,6 @@ def run_pipeline(
         print(f"[ERROR] ASR transcription failed: {e}")
         return
 
-    # 2. LLM (NVIDIA NIM)
     try:
         print("[LLM] Generating response from NIM cloud...")
         reply = llm_engine.get_response(text)
@@ -75,7 +74,6 @@ def run_pipeline(
         print(f"[ERROR] LLM response generation failed: {e}")
         return
 
-    # 3. TTS (GPT-SoVITS V2)
     try:
         print("[TTS] Synthesizing speech via GPT-SoVITS V2...")
         success = tts_sovits.synthesize_speech(reply, response_wav_path)
@@ -86,10 +84,8 @@ def run_pipeline(
         print(f"[ERROR] TTS client error: {e}")
         return
 
-    # 4. Playback (AUD1 TCP streaming)
     try:
         print("[AUD1] Streaming synthesized audio back to STM32...")
-        # Use pacing settings from config.py
         send_aud1(
             host=config.ESP32_HOST,
             port=config.AUD1_PORT,
@@ -112,14 +108,12 @@ def main() -> None:
     # Set Python I/O encoding to UTF-8
     sys.stdout.reconfigure(encoding="utf-8")
 
-    # Local file paths
     received_wav = config.BASE_DIR / "received.wav"
     response_wav = config.BASE_DIR / "response.wav"
 
     print("Initializing Engines...")
     # Warm up local Whisper model
     asr_local.get_asr_engine()
-    # Initialize NIM LLM
     llm_engine = nim_llm.get_llm_engine()
     print("Initialization complete.")
 
@@ -147,7 +141,6 @@ def main() -> None:
                 conn.settimeout(5.0)  # Timeout for individual frames
                 while True:
                     try:
-                        # 1. Read packet header
                         header = read_exact(conn, HEADER_SIZE)
                     except (ConnectionError, OSError):
                         # Connection closed or timed out → K1 released, recording finished
@@ -157,19 +150,16 @@ def main() -> None:
                         print(f"  [WARNING] Invalid packet magic: {header[:4]!r}. Closing session.")
                         break
 
-                    # 2. Unpack header fields
                     sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
                         struct.unpack("<IIIII", header[4:])
                     )
 
                     try:
-                        # 3. Read raw payload
                         payload = read_exact(conn, payload_bytes)
                     except (ConnectionError, OSError):
                         print(f"  [WARNING] Connection lost mid-payload for seq={seq}.")
                         break
 
-                    # 4. Verify checksum
                     actual_checksum = sum(payload) & 0xFFFFFFFF
                     if actual_checksum != expected_checksum:
                         print(f"  [WARNING] Checksum mismatch for seq={seq}. Skipping packet.")
@@ -178,13 +168,10 @@ def main() -> None:
                     all_payloads.append(payload)
                     sample_rate = sample_rate_v
 
-            # Connection closed: process the captured recording
             if all_payloads:
                 combined_pcm = b"".join(all_payloads)
                 print(f"Recording session finished. Received {len(combined_pcm)} bytes of PCM.")
                 write_wav(received_wav, sample_rate, combined_pcm)
-                
-                # Execute pipeline (ASR -> LLM -> TTS -> AUD1)
                 run_pipeline(received_wav, response_wav, llm_engine)
             else:
                 print("Connection closed with no audio packets received.")
