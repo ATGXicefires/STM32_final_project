@@ -22,8 +22,13 @@ Display paths are shown from the repo root; link targets are relative to this fi
 
 ## Python tools
 
-- Audio TCP sender: [tools/aud1_tcp_sender.py](../tools/aud1_tcp_sender.py)
-- PCM TCP receiver: [tools/pcm_tcp_receiver.py](../tools/pcm_tcp_receiver.py)
+- Stage 9 assistant server (ASR→LLM→TTS→AUD1): [tools/assistant_server.py](../tools/assistant_server.py)
+- Shared config (network, ASR, LLM, TTS settings): [tools/config.py](../tools/config.py)
+- Local ASR engine (faster-whisper): [tools/asr_local.py](../tools/asr_local.py)
+- NVIDIA NIM LLM client: [tools/nim_llm.py](../tools/nim_llm.py)
+- GPT-SoVITS TTS client: [tools/tts_sovits.py](../tools/tts_sovits.py)
+- Audio TCP sender (Stage 8): [tools/aud1_tcp_sender.py](../tools/aud1_tcp_sender.py)
+- PCM TCP receiver (Stage 8): [tools/pcm_tcp_receiver.py](../tools/pcm_tcp_receiver.py)
 - WAV to STM32 PCM converter: [tools/wav_to_stm32_pcm.py](../tools/wav_to_stm32_pcm.py)
 
 ## ESP32 (Arduino)

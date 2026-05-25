@@ -16,7 +16,7 @@ Last updated: 2026-05-25
 | 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
 | 7. Audio capture/playback validation | Done | K0 播放通過；K1 先錄 0.5 秒再回放，語音可辨識；I2S DMA 已驗證，OVR 不再是 Stage 8 blocker；live loopback 非必要並維持關閉 |
 | 8. ESP32 audio streaming | Done | K1 hold-to-record PCM1 串流回 PC 完成；`AUD1` 長音樂播放可用；PCM1 多 chunk 佇列、ESP32 32KB UART RX buffer 均已驗證 |
-| 9. ASR -> NIM -> TTS -> playback | Current | PC server、ASR/TTS 串接與回放 |
+| 9. ASR -> NIM -> TTS -> playback | In Progress | PC server 骨架完成（assistant_server.py），待實機測試 |
 | 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
 | 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
 
@@ -66,16 +66,13 @@ Last updated: 2026-05-25
 
 ## Current Checkpoint
 
-Stage 8 完成。STM32 K1 hold-to-record PCM1 串流、ESP32 UART RX overrun 修正（32 KB buffer）、STM32 PCM TX 2-slot queue 均已驗證可用。`AUD1` 長音樂播放正常。
+Stage 9 PC 端 server 骨架完成。`tools/assistant_server.py` 整合 PCM1 接收、faster-whisper ASR（GPU）、NVIDIA NIM LLM、GPT-SoVITS V2 TTS 與 AUD1 回播，架構已打通，待 GPT-SoVITS 本地服務啟動後進行實機全鏈路測試。
 
-下一步為 Stage 9：PC 端 server 銜接 ASR/NIM/TTS，完成語音助理完整對話流程。
-
-PC 端測試工具以專案 `.venv` 為準；不要用系統 Python 3.14 直接跑 `tools/aud1_tcp_sender.py`，因為該腳本目前依賴已移除的 `audioop` 標準庫。
+PC 端工具以專案 `.venv` 為準；需先 `pip install -r requirements.txt` 安裝 Stage 9 依賴，並在 `.env` 設定 `NVIDIA_API_KEY`。Stage 8 獨立測試工具（`aud1_tcp_sender.py`、`pcm_tcp_receiver.py`）仍只需標準庫。
 
 ## Next Work
 
-1. Stage 9 prototype：PC local server 監聽 `PCM1` WAV，接 ASR，把一段固定 TTS WAV 用 `AUD1` 回放，驗證全鏈路基本通。
-2. Stage 9 NIM integration：ASR 輸出接 NIM LLM，LLM 輸出接 TTS，TTS 輸出以 `AUD1` 回放。
-3. Stage 9 latency / error handling：量測端到端延遲，加 timeout 與失敗重試。
-4. Stage 10 OLED / UI：顯示音量、連線、狀態與對話文字。
-5. Stage 11 final validation：長時間穩定度測試與期末報告。
+1. Stage 9 實機測試：啟動 GPT-SoVITS V2 本地 API，執行 `python tools/assistant_server.py`，按 K1 錄音驗證全鏈路（PCM1 → ASR → NIM → TTS → AUD1）。
+2. Stage 9 latency / error handling：量測端到端延遲，加 timeout 與失敗重試。
+3. Stage 10 OLED / UI：顯示音量、連線、狀態與對話文字。
+4. Stage 11 final validation：長時間穩定度測試與期末報告。

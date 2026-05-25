@@ -1,5 +1,16 @@
 # Requirements for STM32 Final Project Python Tools
-# Currently, the tools (aud1_tcp_sender.py, pcm_tcp_receiver.py, wav_to_stm32_pcm.py)
-# use ONLY the Python standard library. No external pip packages are required.
-# 
-# Requires: Python 3.9 or higher
+# Requires: Python 3.9+
+#
+# Stage 1-8 tools (aud1_tcp_sender.py, pcm_tcp_receiver.py, wav_to_stm32_pcm.py)
+# use only the Python standard library — no extra packages needed for those.
+#
+# Stage 9 assistant server (assistant_server.py) requires the packages below.
+# Install with:
+#   .venv\Scripts\activate
+#   pip install -r requirements.txt
+
+# ASR: local Whisper inference (GPU-accelerated)
+faster-whisper>=1.0.0
+
+# LLM: NVIDIA NIM API (OpenAI-compatible SDK)
+openai>=1.0.0

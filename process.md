@@ -54,11 +54,12 @@
 ### Current
 
 - Stage 9: ASR -> NIM -> TTS -> playback
-  - 建立 PC 端整合服務，接收 STM32 K1 錄音的 `PCM1` WAV 檔。
-  - 將 WAV 輸入 ASR（如 Whisper）轉為文字。
-  - 輸入 NVIDIA NIM 進行大語言模型對話。
-  - 大模型輸出文字輸入 TTS 產生 16 kHz Mono WAV。
-  - 將 TTS 語音透過 `AUD1` 主動推送回 STM32 播放，完成閉環對話。
+  - PC 端 server 骨架已完成（`tools/assistant_server.py`）。
+  - 接收 STM32 K1 錄音的 `PCM1` WAV，以 faster-whisper（GPU）做本地 ASR 轉文字。
+  - 文字輸入 NVIDIA NIM LLM（`meta/llama-3.1-70b-instruct`）取得回答。
+  - 回答透過 GPT-SoVITS V2 本地 TTS 合成為 16 kHz Mono WAV。
+  - TTS WAV 以 `AUD1` 推送回 STM32 播放，完成閉環對話。
+  - 待 GPT-SoVITS 本地服務啟動後進行實機全鏈路測試。
 
 ### Remaining
 
@@ -86,24 +87,16 @@ Goal: prove that the audio transport is stable enough before adding ASR/NIM/TTS.
    - If pop/noise appears with `underrun` or `AUD level` near zero, tune PC pacing, prebuffer, Wi-Fi stability, or ESP32 UART scheduling.
    - If pop/noise appears without `underrun` or `overflow`, inspect hardware power, common ground, speaker wiring, ESP32 GPIO4 PWM, and breadboard contact.
 
-### Phase B: Stage 9 Prototype
+### Phase B: Stage 9 Integration (Current)
 
-Goal: reuse the verified Stage 8 transport before building more UI.
+Goal: validate the full dialogue loop end-to-end on real hardware.
 
-1. Keep STM32 firmware unchanged unless Stage 8 exposes a transport bug.
-2. Build a PC local server that receives the existing `PCM1` WAV path.
-3. Run ASR on the received 0.5 second recording.
-4. Send a fixed test response through NIM or a stub while validating the transport.
-5. Convert the response to a short 16 kHz mono WAV and play it back through existing `AUD1`.
-
-### Phase C: Stage 9 Integration
-
-Goal: turn the prototype into the actual assistant loop.
-
-1. Replace the stub with real NIM prompt/response handling.
-2. Add TTS generation and normalize output to the `AUD1` format.
-3. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.
-4. Add basic retry/failure messages for network, ASR, NIM, and TTS failures.
+1. Start GPT-SoVITS V2 local API at `127.0.0.1:9880`.
+2. Set `NVIDIA_API_KEY` in `.env`.
+3. Run `python tools/assistant_server.py` and press K1 to record.
+4. Verify ASR transcription → NIM reply → TTS audio → STM32 playback.
+5. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.
+6. Add timeout and failure-path handling for ASR, NIM, and TTS.
 
 ### Phase D: Stage 10-11 Finish
 

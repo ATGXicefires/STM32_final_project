@@ -23,3 +23,14 @@ stage8_received.wav
 received.wav
 !audio_test/BA_V_Koharu_Swimsuit_Season_Birthday.ogg
 
+# Environmental secrets
+.env
+
+# Stage 9 model cache and Python bytecode
+models/
+**/__pycache__/
+*.pyc
+
+# Stage 9 generated audio artifacts
+response.wav
+

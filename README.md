@@ -8,7 +8,7 @@
 - Stage 8 雙向音訊串流已全鏈路打通且完成穩定化驗收：
   - **PCM1（錄音上傳）**：按住 K1 時，STM32 以 0.5 秒雙緩衝區透過 2-slot 佇列送往 ESP32，ESP32 透過**持久 TCP 連線**即時上傳 PC 並儲存成 WAV，錄音長度與按鍵時間精確對齊。
   - **AUD1（音訊播放）**：PC 端使用 **Sliding Window 流量控制 (24 KB)** 將 WAV 串流經 ESP32 送達 STM32 的 64 KB Ring Buffer。STM32 使用 USART1 RX DMA 環形緩衝與音訊未達時的淡出衰減機制，大幅消除爆音，支援長音樂流暢播放。
-- 下一步是 Stage 9：PC 端 server 銜接 ASR / NVIDIA NIM / TTS，將雙向音訊傳輸轉化為完整語音助理對話環路。
+- Stage 9 PC 端 server 骨架已完成：`assistant_server.py` 整合 faster-whisper ASR、NVIDIA NIM LLM、GPT-SoVITS TTS 與 AUD1 回播，待實機測試驗收。
 
 詳細進度請看 [progress.md](progress.md)，開發與燒錄流程請看 [process.md](process.md)。
 
@@ -95,6 +95,9 @@ graph TD
 - [docs/stage8_audio_streaming.md](docs/stage8_audio_streaming.md)：Stage 8 PCM1/AUD1、ESP32 TCP bridge、長音樂播放與穩定化紀錄。
 - [NIM_Assistant_F407/Core/Src/main.c](NIM_Assistant_F407/Core/Src/main.c)：STM32 firmware 主程式。
 - [ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino](ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino)：ESP32 UART bridge 測試程式。
+- [tools/assistant_server.py](tools/assistant_server.py)：Stage 9 語音助理主 server（ASR→LLM→TTS→AUD1）。
+- [tools/config.py](tools/config.py)：PC 端工具統一設定（網路、ASR、LLM、TTS 參數）。
+- [.env.example](.env.example)：API 金鑰設定範本。
 
 ## 快速開發流程
 
@@ -110,20 +113,27 @@ graph TD
 2. 開啟 `wifi_config.h` 填入你的 Wi-Fi SSID、密碼與 PC Host IP。
 3. 使用 Arduino IDE 燒錄 `ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino` 至 ESP32。
 
-### PC 端測試工具部署與執行
-目前測試工具（位於 `tools/`）僅依賴 Python 3.9+ 的**標準函式庫**，無須安裝第三方套件。
-1. **建立虛擬環境**（選用，建議保持獨立環境）：
+### PC 端工具部署與執行
+
+1. **建立虛擬環境並安裝依賴**：
    ```powershell
    python -m venv .venv
    .\.venv\Scripts\activate
+   pip install -r requirements.txt
    ```
-2. **執行錄音接收端**（接收 STM32 的麥克風音訊，預設監聽 5000 埠並存為 `received.wav`）：
+2. **設定 API 金鑰**（Stage 9 必要）：
    ```powershell
-   python tools/pcm_tcp_receiver.py
+   copy .env.example .env
+   # 編輯 .env，填入 NVIDIA_API_KEY
    ```
-3. **執行音訊發送端**（發送音訊至 ESP32/STM32 播放，預設將 `audio_test/test.wav` 傳送至 `172.20.10.3:5001`）：
+3. **執行 Stage 9 語音助理 server**（整合 ASR/LLM/TTS，監聽 PCM1 port 5000）：
    ```powershell
-   python tools/aud1_tcp_sender.py
+   python tools/assistant_server.py
+   ```
+4. **Stage 8 獨立測試工具**（錄音接收 / 音訊發送，僅需標準庫）：
+   ```powershell
+   python tools/pcm_tcp_receiver.py   # 接收錄音存為 received.wav
+   python tools/aud1_tcp_sender.py    # 發送 audio_test/test.wav 至 ESP32
    ```
 
 
