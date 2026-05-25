@@ -117,14 +117,13 @@ Goal: make the demo explainable and repeatable.
 ## Stage 8 Test Checklist
 
 1. Start the PC receiver:
-   - `.\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output stage8_received.wav`
+   - `.\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py`
 2. Press K1 and verify:
    - Local playback is recognizable.
    - ESP32 forwards one `PCM1` frame.
-   - `stage8_received.wav` is 16 kHz mono, 0.5 seconds, 8000 samples.
-3. Send AUD1 playback with the sender's built-in default WAV/host/port:
-   - `.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py`
-   - If the ESP32 IP is different from the built-in default, add `--host <ESP32_IP>`.
+   - `received.wav` is 16 kHz mono, 0.5 seconds, 8000 samples.
+3. Send AUD1 playback with the sender's default settings:
+   - `.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP>`
 4. During AUD1 playback, watch STM32 USB CDC:
    - `AUD level:<n>`
    - `underrun:<n>`

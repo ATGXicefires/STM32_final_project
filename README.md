@@ -117,14 +117,14 @@ graph TD
    python -m venv .venv
    .\.venv\Scripts\activate
    ```
-2. **執行錄音接收端**（接收 STM32 的麥克風音訊並存為 WAV）：
+2. **執行錄音接收端**（接收 STM32 的麥克風音訊，預設監聽 5000 埠並存為 `received.wav`）：
    ```powershell
-   python tools/pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output received.wav
+   python tools/pcm_tcp_receiver.py
    ```
-3. **執行音訊發送端**（將 PC 的音訊發送給 ESP32/STM32 播放）：
+3. **執行音訊發送端**（發送音訊至 ESP32/STM32 播放，預設發送 `audio_test/test.wav`）：
    ```powershell
    # <ESP32_IP> 請填入 ESP32 連接 Wi-Fi 後取得的 IP
-   python tools/aud1_tcp_sender.py --host <ESP32_IP> --port 5001 "audio_test/test.wav"
+   python tools/aud1_tcp_sender.py --host <ESP32_IP>
    ```
 
 

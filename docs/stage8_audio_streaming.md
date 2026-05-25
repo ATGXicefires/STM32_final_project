@@ -96,22 +96,22 @@ ESP32 sends simple ASCII ACK lines back to the PC TCP sender:
 Start the PC receiver for STM32 recordings:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py --host 0.0.0.0 --port 5000 --output stage8_received.wav
+.\.venv\Scripts\python.exe tools\pcm_tcp_receiver.py
 ```
 
-Send the built-in default WAV file to ESP32 for playback:
+Send the built-in default WAV file (`audio_test/test.wav`) to ESP32 for playback:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP>
 ```
 
-The sender currently has default playback settings built in: default WAV path, ESP32 host `172.20.10.3`, TCP port `5001`, sequence `1`, 8 KB prebuffer, 1024-byte chunks, and a 24 KB sliding window.
+The sender currently has default playback settings built in: default WAV path (`audio_test/test.wav`), ESP32 host `172.20.10.3`, TCP port `5001`, sequence `1`, 8 KB prebuffer, 1024-byte chunks, and a 24 KB sliding window.
 
 Only pass extra arguments when overriding the built-in defaults, for example:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP>
-.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py "audio_test\other.wav" --host <ESP32_IP> --port 5001
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py --host <ESP32_IP> --seq 2
+.\.venv\Scripts\python.exe tools\aud1_tcp_sender.py "audio_test\other.wav" --host <ESP32_IP>
 ```
 
 When a WAV path is provided, the sender accepts mono or stereo WAV and converts to 16 kHz mono signed 16-bit PCM before sending.
