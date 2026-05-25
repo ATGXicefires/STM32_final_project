@@ -98,11 +98,18 @@ graph TD
 
 ## 快速開發流程
 
+### STM32 韌體編譯與燒錄
 1. 在 STM32CubeIDE 開啟 `NIM_Assistant_F407/NIM_Assistant_F407.ioc` 或專案資料夾。
 2. 按 `Ctrl+B` 編譯，產生 `NIM_Assistant_F407/Debug/NIM_Assistant_F407.elf`。
 3. 進入 USB DFU：BOOT0 接 3V3，按 Reset，用 USB 線接板子自己的 USB 孔。
 4. 執行 [NIM_Assistant_F407/flash_usb.bat](NIM_Assistant_F407/flash_usb.bat) 燒錄。
 5. 燒錄完成後 BOOT0 接回 GND，按 Reset，從 USB CDC 或 USB-TTL 觀察 log。
+
+### ESP32 橋接器設定與燒錄
+1. 複製 `ESP32_UART_Bridge_Test/wifi_config.example.h` 為 `ESP32_UART_Bridge_Test/wifi_config.h`。
+2. 開啟 `wifi_config.h` 填入你的 Wi-Fi SSID、密碼與 PC Host IP。
+3. 使用 Arduino IDE 燒錄 `ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino` 至 ESP32。
+
 
 
 ## 目前使用的產品規格
