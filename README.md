@@ -104,10 +104,6 @@ graph TD
 4. 執行 [NIM_Assistant_F407/flash_usb.bat](NIM_Assistant_F407/flash_usb.bat) 燒錄。
 5. 燒錄完成後 BOOT0 接回 GND，按 Reset，從 USB CDC 或 USB-TTL 觀察 log。
 
-## 本地設定與排除敏感檔案
-
-- **Wi-Fi 設定**：ESP32 的網路與主機設定已從 Git 排除。本地開發時，請複製 [ESP32_UART_Bridge_Test/wifi_config.example.h](ESP32_UART_Bridge_Test/wifi_config.example.h) 並命名為 `wifi_config.h`，然後填入你本地的 Wi-Fi SSID、密碼與 PC Host IP。
-- **本地環境排除**：`compile_commands.json`（C++ 語言伺服器產物）與 `*.launch`（IDE 偵錯啟動檔）因為含有本地絕對路徑，已設定忽略且移出 Git 追蹤，以防止環境路徑外洩並確保跨機器開發的相容性。
 
 ## 目前使用的產品規格
 
