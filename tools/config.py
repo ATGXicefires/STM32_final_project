@@ -49,6 +49,13 @@ TTS_PROMPT_TEXT = "你好。"
 TTS_PROMPT_LANG = "zh"
 TTS_TEXT_LANG = "zh"
 
+# Japanese reference voice (Koharu) — used by translator_server.py
+KOHARU_REF_DIR = BASE_DIR / "koharu_GPTSoVITS模型" / "参考音频"
+TTS_REF_AUDIO_JA = str(KOHARU_REF_DIR / "CH0205_Growup_4.wav")
+TTS_PROMPT_TEXT_JA = "先生がいろいろしてくれた分、真面目にやるから！"
+TTS_PROMPT_LANG_JA = "ja"
+TTS_TEXT_LANG_JA = "ja"
+
 NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
 NIM_MODEL = "google/gemma-4-31b-it"
 NIM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
@@ -57,6 +64,7 @@ AUD1_SEQ = 99
 AUD1_PREBUFFER_BYTES = 8192
 AUD1_CHUNK_BYTES = 1024
 AUD1_WINDOW_BYTES = 24576  # 24 KB in-flight limit; fills STM32's 64 KB ring buffer
+AUD1_VOLUME_SCALE = 0.6    # MAX98357A + GPT-SoVITS output is hot; pre-scale before sending
 
 SYSTEM_PROMPT = (
     "你是一個部署在嵌入式系統（STM32）上的智慧語音助理，名叫 NIM-Assistant。\n"
@@ -65,4 +73,13 @@ SYSTEM_PROMPT = (
     "2. 回答要極度精簡，通常不超過兩句話或 50 個字，因為語音播報時間有限。\n"
     "3. 語氣要親切、口語化且實用。\n"
     "4. 避免使用 markdown 格式（如星號、井號、列表），直接輸出純文字。"
+)
+
+TRANSLATION_SYSTEM_PROMPT = (
+    "你是一個中文到日文的翻譯引擎。\n"
+    "規則：\n"
+    "1. 只輸出翻譯後的日文，不要任何前後綴、解釋、引號或標註。\n"
+    "2. 自然口語化，符合日常會話語氣。\n"
+    "3. 不要使用 markdown（星號、井號、列表）。\n"
+    "4. 若輸入無法翻譯（例如空字串或純雜訊轉錄），輸出單一字元「…」。"
 )

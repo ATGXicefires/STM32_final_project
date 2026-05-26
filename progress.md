@@ -1,6 +1,6 @@
 # STM32 Final Project Progress
 
-Last updated: 2026-05-25
+Last updated: 2026-05-26
 
 這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
@@ -16,7 +16,7 @@ Last updated: 2026-05-25
 | 6. ICS43434 I2S mic input | Done | 麥克風 I2S 資料會隨聲音變化；Stage 7 診斷後目前以 left channel 為有效資料來源 |
 | 7. Audio capture/playback validation | Done | K0 播放通過；K1 先錄 0.5 秒再回放，語音可辨識；I2S DMA 已驗證，OVR 不再是 Stage 8 blocker；live loopback 非必要並維持關閉 |
 | 8. ESP32 audio streaming | Done | K1 hold-to-record PCM1 串流回 PC 完成；`AUD1` 長音樂播放可用；PCM1 多 chunk 佇列、ESP32 32KB UART RX buffer 均已驗證 |
-| 9. ASR -> NIM -> TTS -> playback | In Progress | PC server 骨架完成（assistant_server.py），待實機測試 |
+| 9. ASR -> NIM -> TTS -> playback | In Progress | PC server 骨架完成；GPT-SoVITS V2 本地 API 已可用（Koharu 自訓模型，日文 5s/句）；`translator_server.py` 全鏈路（PCM1→ASR→LLM(中→日)→TTS(ja)→AUD1）已接好，待實機測試 |
 | 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
 | 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
 
@@ -66,13 +66,18 @@ Last updated: 2026-05-25
 
 ## Current Checkpoint
 
-Stage 9 PC 端 server 骨架完成。`tools/assistant_server.py` 整合 PCM1 接收、faster-whisper ASR（GPU）、NVIDIA NIM LLM、GPT-SoVITS V2 TTS 與 AUD1 回播，架構已打通，待 GPT-SoVITS 本地服務啟動後進行實機全鏈路測試。
+Stage 9 PC 端 server 骨架 + GPT-SoVITS V2 本地 TTS 服務都已就緒。
 
-PC 端工具以專案 `.venv` 為準；需先 `pip install -r requirements.txt` 安裝 Stage 9 依賴，並在 `.env` 設定 `NVIDIA_API_KEY`。Stage 8 獨立測試工具（`aud1_tcp_sender.py`、`pcm_tcp_receiver.py`）仍只需標準庫。
+- `tools/assistant_server.py`：PCM1 → ASR → NIM → TTS(zh) → AUD1 對話模式。
+- `tools/translator_server.py`：PCM1 → ASR → NIM(中→日) → TTS(ja, Koharu) → AUD1 翻譯驗證模式，方便比對 LLM 輸出穩定性與延遲。
+- GPT-SoVITS V2 跑在 `127.0.0.1:9880`，配置在 `GPT-SoVITS/GPT_SoVITS/configs/tts_infer_koharu.yaml`，使用自訓 Koharu 模型（`GPT-SoVITS/GPT_weights_v2/Koharu-e10.ckpt` + `GPT-SoVITS/SoVITS_weights_v2/Koharu_e15_s630.pth`）。
+- 一次性 8 秒日文合成端到端約 5 秒（RTX 5060 Laptop，fp16）。輸出 32 kHz mono；AUD1 sender 端 (`aud1_tcp_sender.py`) 已內建 32k→16k 重採樣。
+
+PC 端工具以專案 `.venv` 為準；GPT-SoVITS 與 client 同享一個 venv（PyTorch 2.11 + CUDA 12.8）。GPT-SoVITS 安裝細節見 [docs/gpt_sovits_setup.md](docs/gpt_sovits_setup.md)；翻譯模式全鏈路測試步驟見 [docs/stage9_translator_test.md](docs/stage9_translator_test.md)。Stage 8 獨立測試工具（`aud1_tcp_sender.py`、`pcm_tcp_receiver.py`）仍只需標準庫。
 
 ## Next Work
 
-1. Stage 9 實機測試：啟動 GPT-SoVITS V2 本地 API，執行 `python tools/assistant_server.py`，按 K1 錄音驗證全鏈路（PCM1 → ASR → NIM → TTS → AUD1）。
+1. Stage 9 實機測試：照 [docs/stage9_translator_test.md](docs/stage9_translator_test.md) 啟動兩端 server，按 K1 錄音驗證全鏈路。
 2. Stage 9 latency / error handling：量測端到端延遲，加 timeout 與失敗重試。
 3. Stage 10 OLED / UI：顯示音量、連線、狀態與對話文字。
 4. Stage 11 final validation：長時間穩定度測試與期末報告。

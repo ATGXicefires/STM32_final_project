@@ -33,4 +33,14 @@ models/
 
 # Stage 9 generated audio artifacts
 response.wav
+response_ja.wav
+test_synth_ja.wav
+
+# GPT-SoVITS V2 (cloned repo, pretrained weights, runtime log)
+GPT-SoVITS/
+gpt_sovits_server.log
+
+# Koharu custom weights (large binaries)
+koharu_GPTSoVITS模型/*.ckpt
+koharu_GPTSoVITS模型/*.pth
 

@@ -22,7 +22,11 @@ except ImportError:
 class NIMLLMEngine:
     """Handles connection to NVIDIA NIM LLM API and maintains conversation history."""
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        system_prompt: str | None = None,
+    ) -> None:
         if OpenAI is None:
             raise ImportError("openai package is missing. Please run 'pip install openai'.")
 
@@ -34,7 +38,7 @@ class NIMLLMEngine:
             )
         self.client = OpenAI(base_url=config.NIM_BASE_URL, api_key=key)
         self.model = config.NIM_MODEL
-        self.system_prompt = config.SYSTEM_PROMPT
+        self.system_prompt = system_prompt or config.SYSTEM_PROMPT
         self.history: list[dict[str, str]] = []
 
     def get_response(self, user_text: str) -> str:
@@ -77,6 +81,17 @@ def get_llm_engine(api_key: str | None = None) -> NIMLLMEngine:
     if _engine is None:
         _engine = NIMLLMEngine(api_key=api_key)
     return _engine
+
+
+def create_translator_engine(api_key: str | None = None) -> NIMLLMEngine:
+    """Creates a fresh LLM engine wired with the zh→ja translation prompt.
+
+    Not a singleton — keeps the assistant engine and the translator engine isolated.
+    """
+    return NIMLLMEngine(
+        api_key=api_key,
+        system_prompt=config.TRANSLATION_SYSTEM_PROMPT,
+    )
 
 
 def get_response(user_text: str, api_key: str | None = None) -> str:

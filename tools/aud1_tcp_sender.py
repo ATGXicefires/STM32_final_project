@@ -25,7 +25,7 @@ DEFAULT_PREBUFFER_BYTES = 8192
 DEFAULT_WINDOW_BYTES = 24576  # 24 KB in-flight limit; fills STM32's 64 KB ring buffer
 
 
-def load_wav_as_pcm(path: Path) -> bytes:
+def load_wav_as_pcm(path: Path, volume_scale: float = 1.0) -> bytes:
     with wave.open(str(path), "rb") as wav_file:
         channels = wav_file.getnchannels()
         sample_width = wav_file.getsampwidth()
@@ -68,6 +68,9 @@ def load_wav_as_pcm(path: Path) -> bytes:
             else:
                 resampled.append(int(round(mono[base] * (1.0 - frac) + mono[base + 1] * frac)))
         mono = resampled
+
+    if volume_scale != 1.0:
+        mono = [int(s * volume_scale) for s in mono]
 
     return struct.pack(f"<{len(mono)}h", *(max(-32768, min(32767, s)) for s in mono))
 
@@ -144,8 +147,9 @@ def send_aud1(
     prebuffer_bytes: int,
     chunk_bytes: int,
     window_bytes: int,
+    volume_scale: float = 1.0,
 ) -> None:
-    payload = load_wav_as_pcm(wav_path)
+    payload = load_wav_as_pcm(wav_path, volume_scale=volume_scale)
     sample_count = len(payload) // AUD_BYTES_PER_SAMPLE
     checksum = checksum_bytes(payload)
     header = struct.pack(
@@ -246,6 +250,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_WINDOW_BYTES,
         help="Max in-flight unacknowledged bytes; must be <= STM32 ring buffer (64 KB) (default: 24576)",
     )
+    parser.add_argument(
+        "--volume",
+        type=float,
+        default=1.0,
+        help="Linear volume scale applied to PCM before sending (default: 1.0 = no change)",
+    )
     return parser.parse_args()
 
 
@@ -259,6 +269,7 @@ def main() -> None:
         prebuffer_bytes=args.prebuffer_bytes,
         chunk_bytes=args.chunk_bytes,
         window_bytes=args.window_bytes,
+        volume_scale=args.volume,
     )
 
 
