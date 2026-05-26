@@ -8,7 +8,10 @@
 - Stage 8 雙向音訊串流已全鏈路打通且完成穩定化驗收：
   - **PCM1（錄音上傳）**：按住 K1 時，STM32 以 0.5 秒雙緩衝區透過 2-slot 佇列送往 ESP32，ESP32 透過**持久 TCP 連線**即時上傳 PC 並儲存成 WAV，錄音長度與按鍵時間精確對齊。
   - **AUD1（音訊播放）**：PC 端使用 **Sliding Window 流量控制 (24 KB)** 將 WAV 串流經 ESP32 送達 STM32 的 64 KB Ring Buffer。STM32 使用 USART1 RX DMA 環形緩衝與音訊未達時的淡出衰減機制，大幅消除爆音，支援長音樂流暢播放。
-- Stage 9 PC 端 server 骨架已完成：`assistant_server.py` 整合 faster-whisper ASR、NVIDIA NIM LLM、GPT-SoVITS TTS 與 AUD1 回播，待實機測試驗收。
+- Stage 9 PC 端全鏈路已接好，待實機測試驗收：
+  - `assistant_server.py`：PCM1 → faster-whisper ASR → NVIDIA NIM LLM (google/gemma-4-31b-it) → GPT-SoVITS TTS(zh) → AUD1，完整對話循環。
+  - `translator_server.py`：PCM1 → ASR → NIM(中→日) → GPT-SoVITS TTS(ja, Koharu) → AUD1，翻譯驗證模式，用於延遲基準與斷句驗證。
+  - GPT-SoVITS V2 本地 API（Koharu 自訓模型）已可用，一句日文合成約 5 秒（RTX 5060, fp16）。
 
 詳細進度請看 [progress.md](progress.md)，開發與燒錄流程請看 [process.md](process.md)。
 
@@ -39,10 +42,10 @@ graph TD
 ## 硬體分工
 
 - STM32F407VET6：I2S2 full-duplex clock source、音訊取樣/播放、按鍵、狀態輸出。
-- ICS43434 / INMP441 I2S microphone：目前診斷顯示 `L/R=GND` 時有效資料主要在 left channel。
+- ICS43434 / INMP441 I2S microphone：診斷顯示 `L/R=GND` 時有效資料主要在 left channel。
 - MAX98357A：I2S Class D amplifier，接收 STM32 `PB15` 的 I2S2 TX data。
-- ESP32-WROOM-32E：目前負責 USART1/Serial2 與 Wi-Fi TCP bridge，支援 `PCM1` 錄音上傳與 `AUD1` 音訊回放。
-- PC：目前負責 Stage 8 TCP receiver/sender 測試；Stage 9 會接上 ASR、NVIDIA NIM、TTS 與本地 server。
+- ESP32-WROOM-32E：負責 USART1/Serial2 與 Wi-Fi TCP bridge，支援 `PCM1` 錄音上傳與 `AUD1` 音訊回放。
+- PC：Stage 9 語音助理 server（ASR/LLM/TTS）與 GPT-SoVITS V2 本地服務同跑於 PC。
 
 ## 接線總覽
 
@@ -95,7 +98,8 @@ graph TD
 - [docs/stage8_audio_streaming.md](docs/stage8_audio_streaming.md)：Stage 8 PCM1/AUD1、ESP32 TCP bridge、長音樂播放與穩定化紀錄。
 - [NIM_Assistant_F407/Core/Src/main.c](NIM_Assistant_F407/Core/Src/main.c)：STM32 firmware 主程式。
 - [ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino](ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino)：ESP32 UART bridge 測試程式。
-- [tools/assistant_server.py](tools/assistant_server.py)：Stage 9 語音助理主 server（ASR→LLM→TTS→AUD1）。
+- [tools/assistant_server.py](tools/assistant_server.py)：Stage 9 語音助理主 server（ASR→LLM→TTS→AUD1，對話模式）。
+- [tools/translator_server.py](tools/translator_server.py)：Stage 9 翻譯驗證 server（中→日，Koharu TTS，延遲基準用）。
 - [tools/config.py](tools/config.py)：PC 端工具統一設定（網路、ASR、LLM、TTS 參數）。
 - [.env.example](.env.example)：API 金鑰設定範本。
 
@@ -126,10 +130,14 @@ graph TD
    copy .env.example .env
    # 編輯 .env，填入 NVIDIA_API_KEY
    ```
-3. **執行 Stage 9 語音助理 server**（整合 ASR/LLM/TTS，監聽 PCM1 port 5000）：
+3. **執行 Stage 9 server**（兩種模式擇一，需先啟動 GPT-SoVITS V2 於 `127.0.0.1:9880`，詳見 [docs/gpt_sovits_setup.md](docs/gpt_sovits_setup.md)）：
    ```powershell
+   # 對話模式（中文回答）
    python tools/assistant_server.py
+   # 翻譯驗證模式（中→日，Koharu）
+   python tools/translator_server.py
    ```
+   啟動順序與測試步驟詳見 [docs/stage9_translator_test.md](docs/stage9_translator_test.md)。
 4. **Stage 8 獨立測試工具**（錄音接收 / 音訊發送，僅需標準庫）：
    ```powershell
    python tools/pcm_tcp_receiver.py   # 接收錄音存為 received.wav

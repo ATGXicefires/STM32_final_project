@@ -53,12 +53,10 @@
 ### Current
 
 - Stage 9: ASR -> NIM -> TTS -> playback
-  - PC 端 server 骨架已完成（`tools/assistant_server.py`）。
-  - 接收 STM32 K1 錄音的 `PCM1` WAV，以 faster-whisper（GPU）做本地 ASR 轉文字。
-  - 文字輸入 NVIDIA NIM LLM（`meta/llama-3.1-70b-instruct`）取得回答。
-  - 回答透過 GPT-SoVITS V2 本地 TTS 合成為 16 kHz Mono WAV。
-  - TTS WAV 以 `AUD1` 推送回 STM32 播放，完成閉環對話。
-  - 待 GPT-SoVITS 本地服務啟動後進行實機全鏈路測試。
+  - `tools/assistant_server.py`（對話模式）與 `tools/translator_server.py`（中→日翻譯驗證模式）均已完成。
+  - PCM1 → faster-whisper（GPU）ASR → NVIDIA NIM LLM（`google/gemma-4-31b-it`）→ GPT-SoVITS V2 TTS → AUD1 全鏈路已接通。
+  - GPT-SoVITS V2 本地 API 使用 Koharu 自訓模型，日文 TTS 約 5 秒/句（RTX 5060, fp16）。
+  - 待實機全鏈路測試（K1 錄音 → 喇叭播放完整循環）。
 
 ### Remaining
 
@@ -90,12 +88,14 @@ Goal: prove that the audio transport is stable enough before adding ASR/NIM/TTS.
 
 Goal: validate the full dialogue loop end-to-end on real hardware.
 
-1. Start GPT-SoVITS V2 local API at `127.0.0.1:9880`.
+1. Start GPT-SoVITS V2 local API at `127.0.0.1:9880` (see `docs/gpt_sovits_setup.md`).
 2. Set `NVIDIA_API_KEY` in `.env`.
-3. Run `python tools/assistant_server.py` and press K1 to record.
+3. Run `python tools/translator_server.py` (or `assistant_server.py`) and press K1 to record.
 4. Verify ASR transcription → NIM reply → TTS audio → STM32 playback.
 5. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.
 6. Add timeout and failure-path handling for ASR, NIM, and TTS.
+
+Full launch procedure: `docs/stage9_translator_test.md`.
 
 ### Phase D: Stage 10-11 Finish
 

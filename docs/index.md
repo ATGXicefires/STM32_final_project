@@ -22,7 +22,8 @@ Display paths are shown from the repo root; link targets are relative to this fi
 
 ## Python tools
 
-- Stage 9 assistant server (ASR→LLM→TTS→AUD1): [tools/assistant_server.py](../tools/assistant_server.py)
+- Stage 9 assistant server (ASR→LLM→TTS→AUD1, dialogue): [tools/assistant_server.py](../tools/assistant_server.py)
+- Stage 9 translator server (zh→ja, Koharu TTS, latency benchmark): [tools/translator_server.py](../tools/translator_server.py)
 - Shared config (network, ASR, LLM, TTS settings): [tools/config.py](../tools/config.py)
 - Local ASR engine (faster-whisper): [tools/asr_local.py](../tools/asr_local.py)
 - NVIDIA NIM LLM client: [tools/nim_llm.py](../tools/nim_llm.py)
