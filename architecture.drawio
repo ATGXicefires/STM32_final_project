@@ -1,158 +1,100 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<mxfile host="Electron" modified="2026-05-20T00:00:00.000Z" agent="5.0" version="21.0.0" type="device">
-  <diagram id="diagram_1" name="STM32 NIM Assistant Architecture">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
-      <root>
-        <!-- Layer 0 and 1 -->
-        <mxCell id="0" />
-        <mxCell id="1" parent="0" />
-
-        <!-- Outer Boundary Groups/Subgraphs for Visual Separation -->
-        <!-- Edge Terminal Group -->
-        <mxCell id="group_edge" value="STM32 硬體感知層 (Edge Terminal)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F1F8E9;strokeColor=#8BC34A;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="30" width="440" height="460" as="geometry" />
-        </mxCell>
-
-        <!-- Communication Bridge Group -->
-        <mxCell id="group_comm" value="通訊轉換層 (Communication Bridge)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="500" y="210" width="200" height="200" as="geometry" />
-        </mxCell>
-
-        <!-- PC Local Compute Group -->
-        <mxCell id="group_pc" value="PC 邊緣運算中樞 (Edge Compute Center)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#2196F3;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="730" y="120" width="260" height="350" as="geometry" />
-        </mxCell>
-
-        <!-- NVIDIA NIM Cloud Group -->
-        <mxCell id="group_cloud" value="雲端智腦 (NVIDIA NIM)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E0F2F1;strokeColor=#004D40;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" vertex="1" parent="1">
-          <mxGeometry x="1020" y="210" width="200" height="200" as="geometry" />
-        </mxCell>
-
-        <!-- Inner Nodes of Edge Terminal (Parent = group_edge) -->
-        <mxCell id="node_stm32" value="&lt;b&gt;STM32F407VET6&lt;/b&gt;&lt;br&gt;主控核心板&lt;br&gt;&lt;br&gt;- System Clock Config&lt;br&gt;- DMA Double Buffer&lt;br&gt;- GPIO &amp;amp; USART Control&lt;br&gt;- USB CDC Communication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" vertex="1" parent="group_edge">
-          <mxGeometry x="230" y="80" width="180" height="280" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_inmp441" value="&lt;b&gt;INMP441 麥克風&lt;/b&gt;&lt;br&gt;(數位音訊輸入)&lt;br&gt;- I2S RX" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="30" y="40" width="140" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_buttons" value="&lt;b&gt;實體按鍵 (K0, K1)&lt;/b&gt;&lt;br&gt;- PE4 / PE3&lt;br&gt;- GPIO Pull-up Input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="30" y="110" width="140" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_leds" value="&lt;b&gt;LED 狀態燈 (D2, D3)&lt;/b&gt;&lt;br&gt;- PA6 / PA7&lt;br&gt;- GPIO Active-low Out" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="30" y="180" width="140" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_oled" value="&lt;b&gt;OLED 顯示螢幕&lt;/b&gt;&lt;br&gt;- 0.96吋 (7-Pin SPI)&lt;br&gt;- 顯示對話與連線狀態" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="30" y="250" width="140" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_max98357" value="&lt;b&gt;MAX98357A 擴大機&lt;/b&gt;&lt;br&gt;- Class D 功率放大&lt;br&gt;- I2S TX (PB12/13/15)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="30" y="320" width="140" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_speaker" value="&lt;b&gt;3W 喇叭&lt;/b&gt;&lt;br&gt;(類比聲學輸出)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;strokeWidth=1;fontSize=10;" vertex="1" parent="group_edge">
-          <mxGeometry x="50" y="390" width="100" height="50" as="geometry" />
-        </mxCell>
-
-
-        <!-- Inner Nodes of Communication Bridge (Parent = group_comm) -->
-        <mxCell id="node_esp32" value="&lt;b&gt;ESP32 Bridge&lt;/b&gt;&lt;br&gt;(ESP32-WROOM-32E)&lt;br&gt;&lt;br&gt;- Wi-Fi TCP Client&lt;br&gt;- High-Speed UART&lt;br&gt;- Transparent Bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FF9800;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" vertex="1" parent="group_comm">
-          <mxGeometry x="25" y="40" width="150" height="135" as="geometry" />
-        </mxCell>
-
-
-        <!-- Inner Nodes of PC Local Compute (Parent = group_pc) -->
-        <mxCell id="node_pc_server" value="&lt;b&gt;PC Local Server&lt;/b&gt;&lt;br&gt;(TCP Socket Server)&lt;br&gt;- Audio Stream Router&lt;br&gt;- Main Logic Controller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#2196F3;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" vertex="1" parent="group_pc">
-          <mxGeometry x="20" y="40" width="220" height="80" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_whisper" value="&lt;b&gt;Whisper ASR&lt;/b&gt;&lt;br&gt;(語音轉文字)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" vertex="1" parent="group_pc">
-          <mxGeometry x="20" y="150" width="100" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_tts" value="&lt;b&gt;Edge-TTS / GPT-SoVITS&lt;/b&gt;&lt;br&gt;(文字轉語音)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" vertex="1" parent="group_pc">
-          <mxGeometry x="140" y="150" width="100" height="50" as="geometry" />
-        </mxCell>
-
-        <mxCell id="node_pc_status" value="&lt;b&gt;PC Local Monitoring&lt;/b&gt;&lt;br&gt;- Debug UI / Terminal&lt;br&gt;- Latency Monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" vertex="1" parent="group_pc">
-          <mxGeometry x="20" y="240" width="220" height="50" as="geometry" />
-        </mxCell>
-
-
-        <!-- Inner Nodes of NVIDIA NIM Cloud (Parent = group_cloud) -->
-        <mxCell id="node_nim" value="&lt;b&gt;NVIDIA NIM Cloud&lt;/b&gt;&lt;br&gt;&lt;br&gt;- GLM-4.7 LLM API&lt;br&gt;- LLM Inference Engine&lt;br&gt;- Prompt &amp;amp; Context Memory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#263238;strokeColor=#76B900;strokeWidth=2;fontColor=#FFFFFF;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" vertex="1" parent="group_cloud">
-          <mxGeometry x="25" y="40" width="150" height="135" as="geometry" />
-        </mxCell>
-
-
-        <!-- Connections / Edges -->
-        <!-- Note: All coordinates on edges will draw paths. -->
-        
-        <!-- INMP441 -> STM32 -->
-        <mxCell id="edge_mic_stm32" value="I2S RX" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.15;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_inmp441" target="node_stm32">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Buttons -> STM32 -->
-        <mxCell id="edge_btn_stm32" value="GPIO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_buttons" target="node_stm32">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- STM32 -> LEDs -->
-        <mxCell id="edge_stm32_leds" value="GPIO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.55;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_stm32" target="node_leds">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- STM32 -> OLED -->
-        <mxCell id="edge_stm32_oled" value="SPI" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_stm32" target="node_oled">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- STM32 -> MAX98357A -->
-        <mxCell id="edge_stm32_max" value="I2S TX" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_stm32" target="node_max98357">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- MAX98357A -> Speaker -->
-        <mxCell id="edge_max_speaker" value="Analog" style="edgeStyle=straight;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_max98357" target="node_speaker">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- STM32 <-> ESP32 (UART) -->
-        <mxCell id="edge_stm32_esp" value="UART (High Speed)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#E65100;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_stm32" target="node_esp32">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- ESP32 <-> PC Server (TCP) -->
-        <mxCell id="edge_esp_pc" value="Wi-Fi TCP Socket" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_esp32" target="node_pc_server">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- PC Server internally routes to ASR and TTS -->
-        <!-- PC Server -> ASR -->
-        <mxCell id="edge_pc_asr" value="Audio Stream" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;strokeColor=#1E88E5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_pc_server" target="node_whisper">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- TTS -> PC Server -->
-        <mxCell id="edge_tts_pc" value="PCM Stream" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;strokeColor=#1E88E5;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_tts" target="node_pc_server">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Whisper ASR -> NVIDIA NIM Cloud -->
-        <mxCell id="edge_asr_nim" value="Prompt (Text)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#004D40;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_whisper" target="node_nim">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- NVIDIA NIM Cloud -> TTS -->
-        <mxCell id="edge_nim_tts" value="Response (Text)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#004D40;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="node_nim" target="node_tts">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-      </root>
-    </mxGraphModel>
-  </diagram>
+<mxfile host="65bd71144e">
+    <diagram id="diagram_1" name="STM32 NIM Assistant Architecture">
+        <mxGraphModel dx="591" dy="466" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="group_edge" value="STM32 硬體感知層 (Edge Terminal)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#F1F8E9;strokeColor=#8BC34A;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="30" width="440" height="460" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_stm32" value="&lt;b&gt;STM32F407VET6&lt;/b&gt;&lt;br&gt;主控核心板&lt;br&gt;&lt;br&gt;- System Clock Config&lt;br&gt;- DMA Double Buffer&lt;br&gt;- GPIO &amp;amp; USART Control&lt;br&gt;- USB CDC Communication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" parent="group_edge" vertex="1">
+                    <mxGeometry x="230" y="80" width="180" height="280" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_inmp441" value="&lt;b&gt;ICS43434 麥克風&lt;/b&gt;&lt;br&gt;(I2S MEMS Mic，相容 INMP441)&lt;br&gt;- I2S RX (L/R=GND, Left ch)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="30" y="40" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_buttons" value="&lt;b&gt;實體按鍵 (K0, K1)&lt;/b&gt;&lt;br&gt;- PE4 / PE3&lt;br&gt;- GPIO Pull-up Input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="30" y="110" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_leds" value="&lt;b&gt;LED 狀態燈 (D2, D3)&lt;/b&gt;&lt;br&gt;- PA6 / PA7&lt;br&gt;- GPIO Active-low Out" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="30" y="180" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_oled" value="&lt;b&gt;OLED 顯示螢幕&lt;/b&gt;&lt;br&gt;- 0.96吋 (7-Pin SPI)&lt;br&gt;- 顯示對話與連線狀態" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="30" y="250" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_max98357" value="&lt;b&gt;MAX98357A 擴大機&lt;/b&gt;&lt;br&gt;- Class D 功率放大&lt;br&gt;- I2S TX (PB12/13/15)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCEDC8;strokeColor=#8BC34A;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="30" y="320" width="140" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_speaker" value="&lt;b&gt;3W 喇叭&lt;/b&gt;&lt;br&gt;(類比聲學輸出)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#4CAF50;strokeWidth=1;fontSize=10;" parent="group_edge" vertex="1">
+                    <mxGeometry x="50" y="390" width="100" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="group_comm" value="通訊轉換層 (Communication Bridge)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#FF9800;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="210" width="200" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_esp32" value="&lt;b&gt;ESP32 Bridge&lt;/b&gt;&lt;br&gt;(ESP32-WROOM-32E)&lt;br&gt;&lt;br&gt;- Wi-Fi TCP Client&lt;br&gt;- High-Speed UART&lt;br&gt;- Transparent Bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#FF9800;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" parent="group_comm" vertex="1">
+                    <mxGeometry x="25" y="40" width="150" height="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="group_pc" value="PC 邊緣運算中樞 (Edge Compute Center)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#2196F3;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="730" y="120" width="260" height="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_pc_server" value="&lt;b&gt;PC Local Server&lt;/b&gt;&lt;br&gt;(TCP Socket Server)&lt;br&gt;- Audio Stream Router&lt;br&gt;- Main Logic Controller" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#2196F3;strokeWidth=2;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" parent="group_pc" vertex="1">
+                    <mxGeometry x="20" y="40" width="220" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_whisper" value="&lt;b&gt;faster-whisper ASR&lt;/b&gt;&lt;br&gt;(large-v3 語音轉文字)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" parent="group_pc" vertex="1">
+                    <mxGeometry x="20" y="150" width="100" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_tts" value="&lt;b&gt;GPT-SoVITS V2&lt;/b&gt;&lt;br&gt;(Koharu JA / zh TTS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" parent="group_pc" vertex="1">
+                    <mxGeometry x="140" y="150" width="100" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_pc_status" value="&lt;b&gt;PC Local Monitoring&lt;/b&gt;&lt;br&gt;- Debug UI / Terminal&lt;br&gt;- Latency Monitor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#90CAF9;strokeWidth=1;fontSize=10;" parent="group_pc" vertex="1">
+                    <mxGeometry x="20" y="240" width="220" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="group_cloud" value="雲端智腦 (NVIDIA NIM)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#E0F2F1;strokeColor=#004D40;strokeWidth=2;startSize=23;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="1020" y="210" width="200" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="node_nim" value="&lt;b&gt;NVIDIA NIM Cloud&lt;/b&gt;&lt;br&gt;&lt;br&gt;- google/gemma-4-31b-it&lt;br&gt;- LLM Inference Engine&lt;br&gt;- Prompt &amp;amp; Context Memory" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#263238;strokeColor=#76B900;strokeWidth=2;fontColor=#FFFFFF;align=left;spacingLeft=8;verticalAlign=top;spacingTop=10;fontSize=11;" parent="group_cloud" vertex="1">
+                    <mxGeometry x="25" y="40" width="150" height="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_mic_stm32" value="I2S RX" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.15;entryDx=0;entryDy=0;" parent="1" source="node_inmp441" target="node_stm32" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_btn_stm32" value="GPIO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.35;entryDx=0;entryDy=0;" parent="1" source="node_buttons" target="node_stm32" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_stm32_leds" value="GPIO" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.55;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_stm32" target="node_leds" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_stm32_oled" value="SPI" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_stm32" target="node_oled" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_stm32_max" value="I2S TX" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0;exitY=0.92;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="node_stm32" target="node_max98357" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_max_speaker" value="Analog" style="edgeStyle=straight;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#4CAF50;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_max98357" target="node_speaker" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_stm32_esp" value="① USART1 921600 8N1&#xa;(PCM1 up / AUD1 down)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#E65100;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;startArrow=classic;startFill=1;" parent="1" source="node_stm32" target="node_esp32" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_esp_pc" value="② Wi-Fi 持久 TCP Socket&#xa;(24 KB Sliding Window)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;startArrow=classic;startFill=1;" parent="1" source="node_esp32" target="node_pc_server" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_pc_asr" value="③ PCM1 16-bit Mono" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#1E88E5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="node_pc_server" target="node_whisper" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_tts_pc" value="⑥ AUD1 PCM Stream" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#1E88E5;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.75;entryY=1;entryDx=0;entryDy=0;" parent="1" source="node_tts" target="node_pc_server" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_asr_nim" value="④ Prompt (Text)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#004D40;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" parent="1" source="node_whisper" target="node_nim" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_nim_tts" value="⑤ Response (Text)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1.5;strokeColor=#004D40;exitX=0;exitY=0.75;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" parent="1" source="node_nim" target="node_tts" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge_pc_status" value="logging / observe" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=1;strokeColor=#90A4AE;dashed=1;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;endArrow=open;" parent="1" source="node_pc_server" target="node_pc_status" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>
