@@ -36,7 +36,7 @@ class NIMLLMEngine:
                 "NVIDIA API Key is missing. Please set NVIDIA_API_KEY in a .env file "
                 "in the project root directory, or set the environment variable."
             )
-        self.client = OpenAI(base_url=config.NIM_BASE_URL, api_key=key)
+        self.client = OpenAI(base_url=config.NIM_BASE_URL, api_key=key, timeout=30.0)
         self.model = config.NIM_MODEL
         self.system_prompt = system_prompt or config.SYSTEM_PROMPT
         self.history: list[dict[str, str]] = []
@@ -50,12 +50,24 @@ class NIMLLMEngine:
         messages.extend(self.history)
         messages.append({"role": "user", "content": user_text})
 
-        completion = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=0.7,
-            max_tokens=150,
-        )
+        # One retry: the NIM cloud occasionally returns a transient error or times out.
+        last_error: Exception | None = None
+        completion = None
+        for attempt in range(2):
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=150,
+                )
+                break
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    print(f"[LLM] Request failed ({e}); retrying once...")
+        if completion is None:
+            raise RuntimeError(f"NIM LLM request failed after retry: {last_error}")
 
         reply = completion.choices[0].message.content
         if reply is None:

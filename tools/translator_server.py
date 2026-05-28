@@ -8,17 +8,14 @@ streams the result back via AUD1. Logs per-stage latency.
 
 from __future__ import annotations
 
-import socket
-import struct
 import sys
 import time
 from pathlib import Path
 
 # Add parent directory to sys.path to resolve configuration
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from tools import asr_local, config, nim_llm, tts_sovits
+from tools import asr_local, config, nim_llm, pcm1_server, tts_sovits
 from tools.aud1_tcp_sender import send_aud1
-from tools.assistant_server import HEADER_SIZE, MAGIC_PCM1, read_exact, write_wav
 
 
 def run_translation_pipeline(
@@ -108,7 +105,6 @@ def main() -> None:
     # Set Python I/O encoding to UTF-8
     sys.stdout.reconfigure(encoding="utf-8")
 
-    received_wav = config.BASE_DIR / "received.wav"
     response_wav = config.BASE_DIR / "response_ja.wav"
 
     print("Initializing Engines...")
@@ -118,64 +114,10 @@ def main() -> None:
     tts_client = tts_sovits.create_japanese_client()
     print("Initialization complete.")
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind(("0.0.0.0", config.PCM1_PORT))
-        server.listen(5)
-        print(f"Translator server listening on port {config.PCM1_PORT} (PCM1)...")
-
-        while True:
-            try:
-                conn, addr = server.accept()
-            except KeyboardInterrupt:
-                print("\nServer shutting down.")
-                break
-            except Exception as e:
-                print(f"Error accepting connection: {e}")
-                continue
-
-            print(f"Connected from {addr[0]}:{addr[1]} (New recording session)")
-            all_payloads: list[bytes] = []
-            sample_rate = 16000
-
-            with conn:
-                conn.settimeout(5.0)  # Timeout for individual frames
-                while True:
-                    try:
-                        header = read_exact(conn, HEADER_SIZE)
-                    except (ConnectionError, OSError):
-                        # Connection closed or timed out → K1 released, recording finished
-                        break
-
-                    if header[:4] != MAGIC_PCM1:
-                        print(f"  [WARNING] Invalid packet magic: {header[:4]!r}. Closing session.")
-                        break
-
-                    sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
-                        struct.unpack("<IIIII", header[4:])
-                    )
-
-                    try:
-                        payload = read_exact(conn, payload_bytes)
-                    except (ConnectionError, OSError):
-                        print(f"  [WARNING] Connection lost mid-payload for seq={seq}.")
-                        break
-
-                    actual_checksum = sum(payload) & 0xFFFFFFFF
-                    if actual_checksum != expected_checksum:
-                        print(f"  [WARNING] Checksum mismatch for seq={seq}. Skipping packet.")
-                        continue
-
-                    all_payloads.append(payload)
-                    sample_rate = sample_rate_v
-
-            if all_payloads:
-                combined_pcm = b"".join(all_payloads)
-                print(f"Recording session finished. Received {len(combined_pcm)} bytes of PCM.")
-                write_wav(received_wav, sample_rate, combined_pcm)
-                run_translation_pipeline(received_wav, response_wav, llm_engine, tts_client)
-            else:
-                print("Connection closed with no audio packets received.")
+    pcm1_server.serve(
+        lambda wav: run_translation_pipeline(wav, response_wav, llm_engine, tts_client),
+        received_wav=config.BASE_DIR / "received.wav",
+    )
 
 
 if __name__ == "__main__":

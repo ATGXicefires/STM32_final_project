@@ -14,3 +14,6 @@ faster-whisper>=1.0.0
 
 # LLM: NVIDIA NIM API (OpenAI-compatible SDK)
 openai>=1.0.0
+
+# Dev only: protocol unit tests (pytest -q). Not needed to run the servers.
+pytest>=7

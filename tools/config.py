@@ -33,9 +33,10 @@ def load_env() -> None:
 
 load_env()
 
-ESP32_HOST = "172.20.10.3"
-AUD1_PORT = 5001
-PCM1_PORT = 5000
+# Network address of the ESP32 bridge — varies by Wi-Fi / hotspot, so read from .env.
+ESP32_HOST = os.environ.get("ESP32_HOST", "172.20.10.3")
+AUD1_PORT = int(os.environ.get("AUD1_PORT", "5001"))
+PCM1_PORT = int(os.environ.get("PCM1_PORT", "5000"))
 
 ASR_MODEL_SIZE = "large-v3"
 ASR_DEVICE = "cuda"

@@ -44,3 +44,6 @@ gpt_sovits_server.log
 koharu_GPTSoVITS模型/*.ckpt
 koharu_GPTSoVITS模型/*.pth
 
+# Final report drafts (not tracked)
+report/
+

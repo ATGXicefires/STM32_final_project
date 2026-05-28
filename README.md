@@ -100,7 +100,9 @@ graph TD
 - [ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino](ESP32_UART_Bridge_Test/ESP32_UART_Bridge_Test.ino)：ESP32 UART bridge 測試程式。
 - [tools/assistant_server.py](tools/assistant_server.py)：Stage 9 語音助理主 server（ASR→LLM→TTS→AUD1，對話模式）。
 - [tools/translator_server.py](tools/translator_server.py)：Stage 9 翻譯驗證 server（中→日，Koharu TTS，延遲基準用）。
+- [tools/pcm1_server.py](tools/pcm1_server.py)：兩個 server 共用的 PCM1 收音伺服器（接收、組 WAV、呼叫 pipeline 回呼）。
 - [tools/config.py](tools/config.py)：PC 端工具統一設定（網路、ASR、LLM、TTS 參數）。
+- [tests/test_protocol.py](tests/test_protocol.py)：PCM1/AUD1 協定純函式單元測試（`pytest -q`）。
 - [.env.example](.env.example)：API 金鑰設定範本。
 
 ## 快速開發流程
