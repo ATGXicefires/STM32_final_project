@@ -80,12 +80,16 @@ class LocalASREngine:
 
         start_time = time.monotonic()
 
-        # transcribe returns a generator (segments) and transcription info
+        # transcribe returns a generator (segments) and transcription info.
+        # beam_size=1 (greedy) 對短指令足夠且更快；vad_filter 切掉錄音頭尾靜音，
+        # 縮短餵給模型的音訊；不沿用上一段文字當條件，避免歷史污染並略快。
         segments, _ = self.model.transcribe(
             resolved_path,
             language=lang,
             initial_prompt=prompt,
-            beam_size=5,
+            beam_size=1,
+            vad_filter=True,
+            condition_on_previous_text=False,
         )
 
         # Force iteration over generator to perform actual transcription

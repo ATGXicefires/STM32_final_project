@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 # Add parent directory to sys.path to resolve configuration
@@ -78,6 +79,39 @@ class NIMLLMEngine:
         self.history.append({"role": "assistant", "content": reply})
 
         return reply
+
+    def get_response_stream(self, user_text: str) -> Iterator[str]:
+        """Streams the assistant's reply as text chunks as the LLM generates them.
+
+        Yields incremental content deltas. History is updated with the full reply
+        once the stream is exhausted, so callers must fully consume the iterator
+        to keep session state consistent.
+
+        Unlike get_response there is no retry: a streamed request that fails
+        mid-flight cannot be cleanly resumed, so the error propagates to the caller.
+        """
+        messages = [{"role": "system", "content": self.system_prompt}]
+        messages.extend(self.history)
+        messages.append({"role": "user", "content": user_text})
+
+        stream = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.7,
+            max_tokens=150,
+            stream=True,
+        )
+
+        parts: list[str] = []
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                parts.append(delta)
+                yield delta
+
+        reply = "".join(parts).strip()
+        self.history.append({"role": "user", "content": user_text})
+        self.history.append({"role": "assistant", "content": reply})
 
     def reset_session(self) -> None:
         """Resets the conversation history."""

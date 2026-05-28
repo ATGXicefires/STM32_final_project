@@ -103,6 +103,7 @@ graph TD
 - [tools/pcm1_server.py](tools/pcm1_server.py)：兩個 server 共用的 PCM1 收音伺服器（接收、組 WAV、呼叫 pipeline 回呼）。
 - [tools/config.py](tools/config.py)：PC 端工具統一設定（網路、ASR、LLM、TTS 參數）。
 - [tests/test_protocol.py](tests/test_protocol.py)：PCM1/AUD1 協定純函式單元測試（`pytest -q`）。
+- [tests/test_nim_llm_stream.py](tests/test_nim_llm_stream.py)：LLM 串流回應的離線 mock 測試。
 - [.env.example](.env.example)：API 金鑰設定範本。
 
 ## 快速開發流程

@@ -112,6 +112,12 @@ def main() -> None:
     asr_local.get_asr_engine()
     llm_engine = nim_llm.create_translator_engine()
     tts_client = tts_sovits.create_japanese_client()
+    # Warm up TTS: first synth pays GPU-kernel + pyopenjtalk cold-start; discard the output.
+    print("Warming up TTS...")
+    try:
+        tts_client.synthesize("テスト。", config.BASE_DIR / "warmup.wav")
+    except Exception as e:
+        print(f"[TTS] Warmup skipped: {e}")
     print("Initialization complete.")
 
     pcm1_server.serve(

@@ -8,6 +8,7 @@ to form a complete dialogue loop with the STM32 voice assistant.
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 # Add parent directory to sys.path to resolve configuration
@@ -26,10 +27,16 @@ def run_pipeline(
     print("STARTING DIALOGUE PIPELINE")
     print("=" * 50)
 
+    pipeline_start = time.monotonic()
+    asr_elapsed = 0.0
+    llm_elapsed = 0.0
+    tts_elapsed = 0.0
+    aud1_elapsed = 0.0
+
     try:
         print("[ASR] Running transcription...")
-        text, elapsed = asr_local.transcribe_audio(wav_path)
-        print(f"[ASR] Finished in {elapsed:.2f}s. Result: '{text}'")
+        text, asr_elapsed = asr_local.transcribe_audio(wav_path)
+        print(f"[ASR] Finished in {asr_elapsed:.2f}s. Result: '{text}'")
         if not text.strip():
             print("[ASR] No speech detected or transcribed. Skipping pipeline.")
             return
@@ -39,24 +46,30 @@ def run_pipeline(
 
     try:
         print("[LLM] Generating response from NIM cloud...")
+        llm_start = time.monotonic()
         reply = llm_engine.get_response(text)
-        print(f"[LLM] Reply: '{reply}'")
+        llm_elapsed = time.monotonic() - llm_start
+        print(f"[LLM] Finished in {llm_elapsed:.2f}s. Reply: '{reply}'")
     except Exception as e:
         print(f"[ERROR] LLM response generation failed: {e}")
         return
 
     try:
         print("[TTS] Synthesizing speech via GPT-SoVITS V2...")
+        tts_start = time.monotonic()
         success = tts_sovits.synthesize_speech(reply, response_wav_path)
+        tts_elapsed = time.monotonic() - tts_start
         if not success:
             print("[ERROR] TTS synthesis failed.")
             return
+        print(f"[TTS] Finished in {tts_elapsed:.2f}s.")
     except Exception as e:
         print(f"[ERROR] TTS client error: {e}")
         return
 
     try:
         print("[AUD1] Streaming synthesized audio back to STM32...")
+        aud1_start = time.monotonic()
         send_aud1(
             host=config.ESP32_HOST,
             port=config.AUD1_PORT,
@@ -67,9 +80,17 @@ def run_pipeline(
             window_bytes=config.AUD1_WINDOW_BYTES,
             volume_scale=config.AUD1_VOLUME_SCALE,
         )
-        print("[AUD1] Streaming playback completed successfully.")
+        aud1_elapsed = time.monotonic() - aud1_start
+        print(f"[AUD1] Streaming playback completed in {aud1_elapsed:.2f}s.")
     except Exception as e:
         print(f"[ERROR] AUD1 playback streaming failed: {e}")
+
+    total_elapsed = time.monotonic() - pipeline_start
+    print(
+        f"[TIMING] ASR={asr_elapsed:.2f}s LLM={llm_elapsed:.2f}s "
+        f"TTS={tts_elapsed:.2f}s AUD1={aud1_elapsed:.2f}s "
+        f"total={total_elapsed:.2f}s"
+    )
 
     print("=" * 50)
     print("DIALOGUE PIPELINE FINISHED. READY FOR NEXT RECORDING.")
@@ -86,6 +107,12 @@ def main() -> None:
     # Warm up local Whisper model
     asr_local.get_asr_engine()
     llm_engine = nim_llm.get_llm_engine()
+    # Warm up TTS: first synth pays GPU-kernel + frontend cold-start; discard the output.
+    print("Warming up TTS...")
+    try:
+        tts_sovits.synthesize_speech("你好。", config.BASE_DIR / "warmup.wav")
+    except Exception as e:
+        print(f"[TTS] Warmup skipped: {e}")
     print("Initialization complete.")
 
     pcm1_server.serve(

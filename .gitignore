@@ -35,6 +35,7 @@ models/
 response.wav
 response_ja.wav
 test_synth_ja.wav
+warmup.wav
 
 # GPT-SoVITS V2 (cloned repo, pretrained weights, runtime log)
 GPT-SoVITS/

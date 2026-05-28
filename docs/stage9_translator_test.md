@@ -20,7 +20,7 @@ GPT-SoVITS V2 本地服務的安裝細節見 [gpt_sovits_setup.md](gpt_sovits_se
     ↓
 [PC : tools/translator_server.py] listen on :5000
     │ ① 收齊一輪 PCM1 frame → 拼成 received.wav
-    │ ② [ASR] faster-whisper large-v3 (CUDA fp16, lang=zh) → 中文
+    │ ② [ASR] faster-whisper large-v3-turbo (CUDA fp16, lang=zh, beam=1, VAD) → 中文
     │ ③ [LLM] NVIDIA NIM google/gemma-4-31b-it
     │       system prompt = TRANSLATION_SYSTEM_PROMPT (中→日)
     │       reset_session() 每輪 → 不被歷史污染
@@ -57,7 +57,7 @@ GPT-SoVITS V2 本地服務的安裝細節見 [gpt_sovits_setup.md](gpt_sovits_se
 
 ## 啟動順序
 
-需要兩個 terminal，**TTS server 一定要先起**，否則 translator 第一次 synth 會卡 timeout。
+需要兩個 terminal，**TTS server 一定要先起**，否則 translator 啟動時的 TTS 預熱（dummy 合成）會卡 timeout。
 
 ### Terminal 1：GPT-SoVITS V2
 
@@ -79,10 +79,12 @@ $env:PYTHONIOENCODING = "utf-8"
 就緒指標：log 依序出現
 ```
 Initializing Engines...
+Warming up TTS...
+[TTS] Saved synthesized audio to: ...warmup.wav ...
 Initialization complete.
 Translator server listening on port 5000 (PCM1)...
 ```
-（faster-whisper warmup 約 5–10s。）
+（首次跑會自動下載 `large-v3-turbo` ct2 權重到 `models/`；faster-whisper warmup 約 5–10s，TTS 預熱再 +1 句合成時間。）
 
 ## 操作
 
@@ -128,7 +130,7 @@ client.synthesize(reply, 'response_ja.wav')
 
 ## 延遲基準（RTX 5060 Laptop, fp16）
 
-實測一句短中文（~10 字）→ 一句日文（~12 字）：
+下表是 **Phase 1 延遲優化「之前」** 的實測（whisper large-v3, beam=5, 無 VAD, 無 TTS 預熱），一句短中文（~10 字）→ 一句日文（~12 字）：
 
 | 階段 | 時間 |
 | :--- | :--- |
@@ -137,6 +139,27 @@ client.synthesize(reply, 'response_ja.wav')
 | TTS (GPT-SoVITS V2, cut0) | 1.5–2.5s |
 | AUD1 串流 (~5s 音檔) | 約等同音檔長度 |
 | **總計（不含 AUD1 串流時間）** | **3.5–6s** |
+
+> ⚠️ **此表為優化前數據，尚未以 Phase 1 設定重新量測。** 套用 turbo + beam=1 + VAD + TTS 預熱後，請用下節步驟跑數輪，把新數據填回這裡。
+
+## 延遲優化現況（Phase 0–2）
+
+不改協定、不動韌體的純 PC 端優化，目標壓低「放開 K1 到聽到第一個字」的等待。
+
+**Phase 0 量測（已落地）**：`assistant_server` 與 `translator_server` 的 pipeline 結尾都會印
+`[TIMING] ASR=.. LLM=.. TTS=.. AUD1=.. total=..`。跑數輪取平均當基準。
+
+**Phase 1 設定級快贏（已落地，待實機量測）**：
+- ASR：`config.ASR_MODEL_SIZE = large-v3-turbo`、`asr_local.transcribe` 用 `beam_size=1` + `vad_filter=True` + `condition_on_previous_text=False`。
+  - 驗證：同一段錄音比對 `[TIMING] ASR=` 與轉錄文字；若中文辨識明顯退化，把 `config.py` 改回 `large-v3` 即可回退。
+- TTS 預熱：兩端 server 啟動送一句 dummy 合成吃掉首輪冷啟（產物 `warmup.wav`，已 gitignore）。
+  - 驗證：比較第一輪與第二輪的 `[TIMING] TTS=`，差距應收斂。
+- LLM 串流前置：`nim_llm.get_response_stream()` 已備好（`stream=True`），目前 pipeline 尚未啟用，留給 Phase 2。
+
+**Phase 2 句子級串流（尚未實作）**：規劃把「LLM 全文 → TTS 全文 → 播放」改為「LLM 邊吐邊切句 → 逐句 TTS → 逐句 AUD1」三段重疊，大幅縮短 time-to-first-audio。
+- 最大風險：連續多個 AUD1 frame 之間，STM32 64 KB ring buffer 可能 underrun 造成句間 gap/爆音，需實機驗（對照 STM32 log 的 `AUD level` / `underrun` / `overflow`）。
+- 預計加 `config.PIPELINE_STREAMING` 開關可一鍵退回整段模式做 A/B。
+- **待 Phase 0+1 取得實機數據後再決定是否投入。**
 
 ## 常見故障
 

@@ -38,7 +38,8 @@ ESP32_HOST = os.environ.get("ESP32_HOST", "172.20.10.3")
 AUD1_PORT = int(os.environ.get("AUD1_PORT", "5001"))
 PCM1_PORT = int(os.environ.get("PCM1_PORT", "5000"))
 
-ASR_MODEL_SIZE = "large-v3"
+# turbo 在中文 transcribe 準度接近 large-v3，但快約 3-4x（不支援 translate 任務，本專案不需要）。
+ASR_MODEL_SIZE = "large-v3-turbo"
 ASR_DEVICE = "cuda"
 ASR_COMPUTE_TYPE = "float16"
 ASR_LANGUAGE = "zh"

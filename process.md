@@ -92,10 +92,18 @@ Goal: validate the full dialogue loop end-to-end on real hardware.
 2. Set `NVIDIA_API_KEY` in `.env`.
 3. Run `python tools/translator_server.py` (or `assistant_server.py`) and press K1 to record.
 4. Verify ASR transcription → NIM reply → TTS audio → STM32 playback.
-5. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.
-6. Add timeout and failure-path handling for ASR, NIM, and TTS.
+5. Log per-step latency: `PCM1 receive`, ASR, NIM, TTS, `AUD1 playback`.（兩端 server 已印 `[TIMING]` 行。）
+6. Add timeout and failure-path handling for ASR, NIM, and TTS.（NIM=30s timeout + 重試、TTS=重試已加。）
 
 Full launch procedure: `docs/stage9_translator_test.md`.
+
+### Phase C: Stage 9 Latency Optimization
+
+Goal: 壓低單輪對話的 time-to-first-audio，不改協定、不動韌體。詳見 `docs/stage9_translator_test.md`「延遲優化現況」。
+
+- **Phase 0（已落地）**：兩端 pipeline 補 `[TIMING]` 逐段計時，先取實機 baseline。
+- **Phase 1（已落地，待實機量測）**：ASR 換 `large-v3-turbo` + `beam=1` + VAD；兩端 server 啟動 TTS 預熱；`nim_llm.get_response_stream()` 串流方法備妥（尚未啟用）。
+- **Phase 2（尚未實作）**：句子級串流 pipeline（LLM 切句 → 逐句 TTS → 逐句 AUD1 重疊），需實機驗 AUD1 句間銜接；待 Phase 0+1 數據確認後再投入。
 
 ### Phase D: Stage 10-11 Finish
 
