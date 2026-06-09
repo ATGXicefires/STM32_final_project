@@ -74,7 +74,10 @@ def serve(
             sample_rate = 16000
 
             with conn:
-                conn.settimeout(5.0)  # Timeout for individual frames
+                # Frames arrive every ~0.5 s while K1 is held; the ESP32 only closes the
+                # connection after a 3 s idle timeout, so treat a 1 s gap as end-of-session
+                # to start the pipeline sooner instead of waiting for the remote close.
+                conn.settimeout(1.0)
                 while True:
                     try:
                         header = read_exact(conn, HEADER_SIZE)
@@ -98,8 +101,8 @@ def serve(
 
                     actual_checksum = sum(payload) & 0xFFFFFFFF
                     if actual_checksum != expected_checksum:
-                        print(f"  [WARNING] Checksum mismatch for seq={seq}. Skipping packet.")
-                        continue
+                        # Keep the frame anyway: noisy audio beats a silent 0.5 s gap for ASR.
+                        print(f"  [WARNING] Checksum mismatch for seq={seq}. Keeping frame anyway.")
 
                     all_payloads.append(payload)
                     sample_rate = sample_rate_v

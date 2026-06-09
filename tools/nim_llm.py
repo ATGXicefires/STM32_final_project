@@ -19,6 +19,11 @@ try:
 except ImportError:
     OpenAI = None
 
+# Keep only the most recent N user/assistant turns in history; without a cap,
+# long assistant sessions grow latency and cost every turn until the model's
+# context limit is hit.
+HISTORY_MAX_TURNS = 10
+
 
 class NIMLLMEngine:
     """Handles connection to NVIDIA NIM LLM API and maintains conversation history."""
@@ -77,6 +82,7 @@ class NIMLLMEngine:
 
         self.history.append({"role": "user", "content": user_text})
         self.history.append({"role": "assistant", "content": reply})
+        self._trim_history()
 
         return reply
 
@@ -112,6 +118,13 @@ class NIMLLMEngine:
         reply = "".join(parts).strip()
         self.history.append({"role": "user", "content": user_text})
         self.history.append({"role": "assistant", "content": reply})
+        self._trim_history()
+
+    def _trim_history(self) -> None:
+        """Drops the oldest turns so history holds at most HISTORY_MAX_TURNS turns."""
+        max_messages = HISTORY_MAX_TURNS * 2
+        if len(self.history) > max_messages:
+            del self.history[:-max_messages]
 
     def reset_session(self) -> None:
         """Resets the conversation history."""

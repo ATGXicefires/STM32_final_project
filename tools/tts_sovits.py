@@ -99,10 +99,6 @@ class SoVITSClient:
                     self.api_url, data=req_data, headers=headers, method="POST"
                 )
                 with urllib.request.urlopen(req, timeout=30.0) as response:
-                    if response.status != 200:
-                        print(f"[ERROR] TTS API server returned status: {response.status}")
-                        return False
-
                     audio_data = response.read()
 
                 out_file = Path(output_path)
@@ -112,6 +108,16 @@ class SoVITSClient:
                 print(f"[TTS] Saved synthesized audio to: {out_file} ({len(audio_data)} bytes)")
                 return True
 
+            except urllib.error.HTTPError as e:
+                # The error body carries the server-side diagnosis (e.g. cp950 / TorchCodec
+                # failures show up as a 400 with details) — surface it instead of dropping it.
+                body = e.read().decode("utf-8", errors="replace")
+                print(f"[ERROR] TTS API server returned HTTP {e.code}: {body}")
+                if 400 <= e.code < 500:
+                    # Resending the same bad request cannot succeed; don't retry.
+                    return False
+                if attempt == 0:
+                    print("[TTS] Retrying once...")
             except (urllib.error.URLError, OSError) as e:
                 print(f"[ERROR] Failed to connect or receive from TTS server: {e}")
                 if attempt == 0:

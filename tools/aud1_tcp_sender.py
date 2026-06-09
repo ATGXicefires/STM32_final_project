@@ -8,10 +8,14 @@ import math
 import select
 import socket
 import struct
+import sys
 import time
 import wave
 from pathlib import Path
 
+# Add parent directory to sys.path to resolve configuration
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from tools import config
 
 AUD_MAGIC = b"AUD1"
 AUD_SAMPLE_RATE = 16000
@@ -19,8 +23,6 @@ AUD_BYTES_PER_SAMPLE = 2
 AUD_BYTE_RATE = AUD_SAMPLE_RATE * AUD_BYTES_PER_SAMPLE
 
 DEFAULT_WAV_FILE = "audio_test/test.wav"
-DEFAULT_ESP32_HOST = "172.20.10.3"
-DEFAULT_ESP32_PORT = 5001
 DEFAULT_PREBUFFER_BYTES = 8192
 DEFAULT_WINDOW_BYTES = 24576  # 24 KB in-flight limit; fills STM32's 64 KB ring buffer
 
@@ -229,8 +231,8 @@ def parse_args() -> argparse.Namespace:
         default=Path(DEFAULT_WAV_FILE),
         help="Input WAV file"
     )
-    parser.add_argument("--host", default=DEFAULT_ESP32_HOST, help="ESP32 Wi-Fi IPv4 address")
-    parser.add_argument("--port", type=int, default=DEFAULT_ESP32_PORT, help="ESP32 AUD1 TCP port")
+    parser.add_argument("--host", default=config.ESP32_HOST, help="ESP32 Wi-Fi IPv4 address")
+    parser.add_argument("--port", type=int, default=config.AUD1_PORT, help="ESP32 AUD1 TCP port")
     parser.add_argument("--seq", type=int, default=1, help="Debug sequence number")
     parser.add_argument(
         "--prebuffer-bytes",

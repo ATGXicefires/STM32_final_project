@@ -3,6 +3,10 @@
 Quick jump links for the main logic blocks in this project.
 Display paths are shown from the repo root; link targets are relative to this file.
 
+## Reviews
+
+- Stage 9 code review (Python-side fixes applied; firmware items deferred): [docs/code_review_stage9.md](code_review_stage9.md)
+
 ## Core application
 
 - Parameters and buffers: [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L38-L68) and [NIM_Assistant_F407/Core/Src/main.c](../NIM_Assistant_F407/Core/Src/main.c#L155-L160)
