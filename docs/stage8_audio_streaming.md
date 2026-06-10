@@ -1,12 +1,12 @@
 # Stage 8 Audio Streaming Status
 
-Last updated: 2026-05-25
+Last updated: 2026-06-10
 
 ## Current Status
 
 Stage 8 is complete.
 
-- `PCM1` path: K1 hold-to-record streaming. While K1 is held, STM32 continuously fills 0.5-second double-buffers (8000 samples each) and enqueues each completed buffer to a 2-slot PCM TX queue over USART1. ESP32 receives each PCM1 frame and forwards it to the PC TCP receiver over a **persistent TCP session** (one connection per K1 session, not per frame). On K1 release, any partial buffer (actual recorded samples, no zero padding) is also queued and sent. PC side concatenates all frames into a single WAV.
+- `PCM1` path: K1 hold-to-record streaming. While K1 is held, STM32 continuously fills 0.5-second double-buffers (8000 samples each) and enqueues each completed buffer to a 3-slot PCM TX queue over USART1. ESP32 receives each PCM1 frame and forwards it to the PC TCP receiver over a **persistent TCP session** (one connection per K1 session, not per frame). On K1 release, any partial buffer (actual recorded samples, no zero padding) is queued and sent, followed by a zero-payload end-of-session marker frame (see Protocols below). PC side concatenates all frames into a single WAV.
 - `AUD1` path: PC sender converts a WAV file to 16 kHz mono signed 16-bit PCM, sends one fixed-length `AUD1` frame to ESP32 TCP port `5001`, ESP32 ACKs and forwards chunks to STM32 over `Serial2`, and STM32 plays through MAX98357A from a 64 KB ring buffer.
 
 ## Hardware Wiring
@@ -55,7 +55,12 @@ Header is 24 bytes:
 - `seq u32`
 - `checksum u32`
 
-Payload is little-endian signed 16-bit mono PCM. One recording session (K1 hold to K1 release) produces N full frames followed by one partial frame. The PC receiver concatenates all payloads into a single WAV whose total length matches the K1 hold duration.
+Payload is little-endian signed 16-bit mono PCM. One recording session (K1 hold to K1 release) produces N full frames, one partial frame, then one **end-of-session (EOS) marker frame**: a normal PCM1 header with `sample_count = 0`, `payload_bytes = 0`, `checksum = 0` and no payload. The PC receiver concatenates all audio payloads into a single WAV whose total length matches the K1 hold duration.
+
+Session-end handling is layered:
+
+1. **EOS frame (primary)** — STM32 sends it on K1 release; ESP32 forwards it and immediately closes the PCM TCP session; the PC starts its pipeline as soon as the EOS frame is parsed.
+2. **Receive timeout (fallback)** — the PC treats a 1.0 s gap with no frame as session end, and the ESP32 closes the TCP session after 3 s idle. This keeps firmware that predates the EOS marker (or a lost EOS frame) working, just ~1 s slower.
 
 ### AUD1: PC To STM32 Playback
 

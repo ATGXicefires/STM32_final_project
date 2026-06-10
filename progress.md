@@ -1,6 +1,6 @@
 # STM32 Final Project Progress
 
-Last updated: 2026-05-26
+Last updated: 2026-06-10
 
 這份文件只記錄目前狀態與下一步。長篇排查紀錄已移到 [docs/stage6_microphone_debug.md](docs/stage6_microphone_debug.md) 與 [docs/stage7_loopback_debug.md](docs/stage7_loopback_debug.md)，燒錄流程已移到 [docs/flash_usb_dfu.md](docs/flash_usb_dfu.md)。
 
@@ -18,7 +18,7 @@ Last updated: 2026-05-26
 | 8. ESP32 audio streaming | Done | K1 hold-to-record PCM1 串流回 PC 完成；`AUD1` 長音樂播放可用；PCM1 多 chunk 佇列、ESP32 32KB UART RX buffer 均已驗證 |
 | 9. ASR -> NIM -> TTS -> playback | In Progress | PC server 骨架完成；GPT-SoVITS V2 本地 API 已可用（Koharu 自訓模型，日文 5s/句）；`translator_server.py` 全鏈路（PCM1→ASR→LLM(中→日)→TTS(ja)→AUD1）已接好，待實機測試 |
 | 10. OLED / UI | Todo | 顯示音量、連線、狀態與對話文字 |
-| 11. Final validation | Todo | 長時間穩定度測試與期末報告 |
+| 11. Final validation | In Progress | 長時間穩定度測試待做；期末 PPT 初稿完成（`report/期末報告_NIM_Assistant.pptx`，由 `report/build_ppt.js` 生成，report/ 不進版控） |
 
 ## Current Firmware Behavior
 

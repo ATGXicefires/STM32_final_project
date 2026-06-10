@@ -118,7 +118,9 @@ static uint32_t pcm_tx_checksum = 0;
 static uint8_t *pcm_tx_buf = NULL;
 static uint32_t pcm_tx_bytes = 0U;
 
-#define PCM_TX_QUEUE_SIZE 2U
+/* 3 slots: worst case at K1 release one full frame is queued plus the final
+   partial frame, and the zero-payload EOS marker still needs a slot. */
+#define PCM_TX_QUEUE_SIZE 3U
 typedef struct { uint8_t *buf; uint32_t bytes; } pcm_tx_item_t;
 static pcm_tx_item_t pcm_tx_queue[PCM_TX_QUEUE_SIZE];
 static volatile uint8_t  pcm_tx_q_head = 0U;
@@ -644,6 +646,9 @@ static void Test_StopMicStreamRecord(void) {
       (uint8_t *)record_buf[wb],
       len * sizeof(int16_t));
   }
+  /* Zero-payload PCM1 frame = end-of-session marker, so the PC can start the
+     pipeline immediately instead of waiting for its receive timeout. */
+  Test_RequestPcmTransmit(NULL, 0U);
   Test_SendStatus("K1 released: stream record stop, final PCM TX queued\r\n");
 }
 

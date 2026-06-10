@@ -42,6 +42,54 @@ def write_wav(path: Path, sample_rate: int, payload: bytes) -> None:
         wav_file.writeframes(payload)
 
 
+def receive_session(conn: socket.socket) -> tuple[list[bytes], int]:
+    """Reads PCM1 frames from one recording session until end-of-session.
+
+    The session normally ends with an explicit zero-payload EOS frame sent by
+    the STM32 on K1 release; a 1 s receive timeout and connection close are
+    kept as fallbacks for firmware that predates the EOS marker (or a lost
+    frame). Returns (payloads, sample_rate).
+    """
+    all_payloads: list[bytes] = []
+    sample_rate = 16000
+
+    conn.settimeout(1.0)
+    while True:
+        try:
+            header = read_exact(conn, HEADER_SIZE)
+        except (ConnectionError, OSError):
+            # Connection closed or timed out → K1 released, recording finished
+            break
+
+        if header[:4] != MAGIC_PCM1:
+            print(f"  [WARNING] Invalid packet magic: {header[:4]!r}. Closing session.")
+            break
+
+        sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
+            struct.unpack("<IIIII", header[4:])
+        )
+
+        if payload_bytes == 0:
+            print(f"  End-of-session frame received (seq={seq}).")
+            break
+
+        try:
+            payload = read_exact(conn, payload_bytes)
+        except (ConnectionError, OSError):
+            print(f"  [WARNING] Connection lost mid-payload for seq={seq}.")
+            break
+
+        actual_checksum = sum(payload) & 0xFFFFFFFF
+        if actual_checksum != expected_checksum:
+            # Keep the frame anyway: noisy audio beats a silent 0.5 s gap for ASR.
+            print(f"  [WARNING] Checksum mismatch for seq={seq}. Keeping frame anyway.")
+
+        all_payloads.append(payload)
+        sample_rate = sample_rate_v
+
+    return all_payloads, sample_rate
+
+
 def serve(
     on_recording: Callable[[Path], None],
     received_wav: Path,
@@ -70,42 +118,9 @@ def serve(
                 continue
 
             print(f"Connected from {addr[0]}:{addr[1]} (New recording session)")
-            all_payloads: list[bytes] = []
-            sample_rate = 16000
 
             with conn:
-                # Frames arrive every ~0.5 s while K1 is held; the ESP32 only closes the
-                # connection after a 3 s idle timeout, so treat a 1 s gap as end-of-session
-                # to start the pipeline sooner instead of waiting for the remote close.
-                conn.settimeout(1.0)
-                while True:
-                    try:
-                        header = read_exact(conn, HEADER_SIZE)
-                    except (ConnectionError, OSError):
-                        # Connection closed or timed out → K1 released, recording finished
-                        break
-
-                    if header[:4] != MAGIC_PCM1:
-                        print(f"  [WARNING] Invalid packet magic: {header[:4]!r}. Closing session.")
-                        break
-
-                    sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
-                        struct.unpack("<IIIII", header[4:])
-                    )
-
-                    try:
-                        payload = read_exact(conn, payload_bytes)
-                    except (ConnectionError, OSError):
-                        print(f"  [WARNING] Connection lost mid-payload for seq={seq}.")
-                        break
-
-                    actual_checksum = sum(payload) & 0xFFFFFFFF
-                    if actual_checksum != expected_checksum:
-                        # Keep the frame anyway: noisy audio beats a silent 0.5 s gap for ASR.
-                        print(f"  [WARNING] Checksum mismatch for seq={seq}. Keeping frame anyway.")
-
-                    all_payloads.append(payload)
-                    sample_rate = sample_rate_v
+                all_payloads, sample_rate = receive_session(conn)
 
             if all_payloads:
                 combined_pcm = b"".join(all_payloads)

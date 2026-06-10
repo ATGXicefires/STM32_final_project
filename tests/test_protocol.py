@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import socket
 import struct
+import time
 import wave
 
 import pytest
@@ -34,6 +35,56 @@ def test_read_exact_raises_on_eof():
         b.close()  # signal EOF after only 2 bytes
         with pytest.raises(ConnectionError):
             pcm1_server.read_exact(a, 4)
+    finally:
+        a.close()
+
+
+# --- receive_session ------------------------------------------------------
+
+def _pcm1_frame(payload: bytes, seq: int, sample_rate: int = 16000) -> bytes:
+    return struct.pack(
+        "<4sIIIII",
+        pcm1_server.MAGIC_PCM1,
+        sample_rate,
+        len(payload) // 2,
+        len(payload),
+        seq,
+        sum(payload) & 0xFFFFFFFF,
+    ) + payload
+
+
+def test_receive_session_ends_on_eos_frame():
+    a, b = socket.socketpair()
+    try:
+        payload1 = struct.pack("<4h", 1, 2, 3, 4)
+        payload2 = struct.pack("<4h", -1, -2, -3, -4)
+        b.sendall(_pcm1_frame(payload1, seq=1))
+        b.sendall(_pcm1_frame(payload2, seq=2))
+        b.sendall(_pcm1_frame(b"", seq=3))  # zero-payload EOS marker
+
+        start = time.monotonic()
+        payloads, sample_rate = pcm1_server.receive_session(a)
+        elapsed = time.monotonic() - start
+
+        assert payloads == [payload1, payload2]  # EOS frame itself is not audio
+        assert sample_rate == 16000
+        assert elapsed < 0.5  # returned on EOS, not the 1 s receive timeout
+    finally:
+        a.close()
+        b.close()
+
+
+def test_receive_session_falls_back_on_eof():
+    a, b = socket.socketpair()
+    try:
+        payload = struct.pack("<4h", 10, 20, 30, 40)
+        b.sendall(_pcm1_frame(payload, seq=1))
+        b.close()  # old firmware: no EOS frame, connection just closes
+
+        payloads, sample_rate = pcm1_server.receive_session(a)
+
+        assert payloads == [payload]
+        assert sample_rate == 16000
     finally:
         a.close()
 

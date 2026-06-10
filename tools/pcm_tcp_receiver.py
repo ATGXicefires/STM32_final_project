@@ -92,6 +92,10 @@ def receive_packets(
                     sample_rate_v, sample_count, payload_bytes, seq, expected_checksum = (
                         struct.unpack("<IIIII", header[4:])
                     )
+                    if payload_bytes == 0:
+                        print(f"  seq={seq}: end-of-session frame, session ended")
+                        break
+
                     try:
                         payload = read_exact(conn, payload_bytes)
                     except (ConnectionError, OSError):

@@ -157,6 +157,9 @@ client.synthesize(reply, 'response_ja.wav')
 - LLM 串流前置：`nim_llm.get_response_stream()` 已備好（`stream=True`），目前 pipeline 尚未啟用，留給 Phase 2。
 - Session 結束提早判定：`pcm1_server.py` 的 frame timeout `5.0` → `1.0` 秒，不再等 ESP32 的 3 秒閒置斷線才開跑 pipeline（詳見 [code_review_stage9.md](code_review_stage9.md) #1）。
   - 驗證：實測「放開 K1 → `STARTING DIALOGUE PIPELINE` 印出」的牆鐘時間，預期 ~3s → ~1s；若 Wi-Fi 卡頓造成錄音被提前截斷，可調回較大值。
+- **顯式 EOS frame（已落地，需重燒兩端韌體）**：K1 放開時 STM32 多送一個 zero-payload PCM1 frame（`payload_bytes = 0`）當 end-of-session 標記，ESP32 轉發後立即關閉 TCP session，PC 收到後立刻開跑 pipeline——上一條的 1.0s timeout 等待整段消失（協定細節見 [stage8_audio_streaming.md](stage8_audio_streaming.md)）。
+  - 相容性：舊韌體沒有 EOS frame 仍靠 1.0s timeout fallback 正常運作，只是慢 ~1 秒。
+  - 驗證：Terminal 2 log 出現 `End-of-session frame received (seq=N)`、ESP32 serial log 出現 `PCM EOS, closing session`；「放開 K1 → `STARTING ... PIPELINE`」應 <0.2s。
 
 **Phase 2 句子級串流（尚未實作）**：規劃把「LLM 全文 → TTS 全文 → 播放」改為「LLM 邊吐邊切句 → 逐句 TTS → 逐句 AUD1」三段重疊，大幅縮短 time-to-first-audio。
 - 最大風險：連續多個 AUD1 frame 之間，STM32 64 KB ring buffer 可能 underrun 造成句間 gap/爆音，需實機驗（對照 STM32 log 的 `AUD level` / `underrun` / `overflow`）。

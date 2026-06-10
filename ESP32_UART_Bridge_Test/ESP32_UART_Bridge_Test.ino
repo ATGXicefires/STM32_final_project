@@ -285,9 +285,16 @@ static void finishPcmFrame() {
   Serial.print("/");
   Serial.println(pcmExpectedChecksum);
 
+  bool isEos = (pcmPayloadBytes == 0);
+
   if (actualChecksum == pcmExpectedChecksum) {
     Serial.println("ESP32: PCM checksum OK");
-    forwardPcmToPc();
+    if (forwardPcmToPc() && isEos) {
+      // End-of-session marker forwarded; close the TCP session now so the PC
+      // gets a definite EOF instead of waiting for the idle timeout.
+      Serial.println("ESP32: PCM EOS, closing session");
+      pcmClient.stop();
+    }
   } else {
     Serial.println("ESP32: PCM checksum FAIL");
   }
@@ -330,9 +337,13 @@ static void handlePcmHeaderByte(uint8_t byte) {
   Serial.print("ESP32: PCM payload start bytes=");
   Serial.println(pcmPayloadBytes);
 
-  if ((pcmPayloadBytes == 0) || (pcmPayloadBytes > PCM_PAYLOAD_CAPACITY)) {
+  if (pcmPayloadBytes > PCM_PAYLOAD_CAPACITY) {
     Serial.println("ESP32: PCM payload too large, dropping frame");
     rxMode = RX_PCM_DROP;
+  } else if (pcmPayloadBytes == 0) {
+    // Zero-payload frame = end-of-session marker; no payload bytes will
+    // follow, so finish the frame right here.
+    finishPcmFrame();
   } else {
     rxMode = RX_PCM_PAYLOAD;
   }
